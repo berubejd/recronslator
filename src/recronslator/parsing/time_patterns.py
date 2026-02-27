@@ -409,6 +409,19 @@ def _e_first_n_minutes(text: str) -> ScheduleIntent | None:
     return ScheduleIntent(minute_range=(0, n))
 
 
+@registry.register("minute_range_span", priority=331, composite=False)
+def _e_minute_range_span(text: str) -> ScheduleIntent | None:
+    """in minutes :MM through :NN / in minute MM to NN"""
+    m = re.search(
+        r"\bin\s+minutes?\s+:?(\d{1,2})\s*(?:through|to|-)\s+:?(\d{1,2})\b",
+        text,
+    )
+    if not m:
+        return None
+    lo, hi = int(m.group(1)), int(m.group(2))
+    return ScheduleIntent(minute_range=(lo, hi))
+
+
 @registry.register("time_range_enricher", priority=335, composite=False)
 def _e_time_range(text: str) -> ScheduleIntent | None:
     """between Xam and Ypm / from Xam to Ypm -- enricher for hour ranges"""

@@ -299,6 +299,10 @@ def test_forward_and_describe_keywords(
         "15,30,45 * * * *",    # multi-minute list (RC5)
         "15,30,45 9 * * *",    # multi-minute list + specific hour (RC5)
         "0-14 9 * * *",        # minute range + specific hour (RC4)
+        "5-10 * * * *",        # non-zero minute range (wildcard hour)
+        "5-10 9 * * *",        # non-zero minute range + specific hour
+        "15-30 */2 * * *",     # non-zero minute range + step hour
+        "0-14 */2 * * *",      # zero-start minute range + step hour
     ],
 )
 def test_cron_to_english_to_cron_stable(cron: str) -> None:

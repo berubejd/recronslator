@@ -203,6 +203,11 @@ class TestMinuteRangeDescriptions:
         result = describe("0-14 * * * *")
         assert "15" in result or "first" in result.lower()
 
+    def test_nonzero_minute_range_preserves_bounds(self) -> None:
+        result = describe("5-10 * * * *")
+        assert ":05" in result
+        assert ":10" in result
+
 
 class TestInvalidExpressions:
     def test_wrong_field_count(self) -> None:
@@ -394,6 +399,11 @@ class TestMinuteHourMatrix:
         # minute=range
         ("0-14", "*",     "first 15 minutes"),
         ("0-14", "9",     "first 15 minutes at 9:00 AM"),
+        ("5-10", "*",     "minutes :05 through :10"),
+        ("5-10", "9",     "minutes :05 through :10 at 9:00 AM"),
+        ("0-14", "*/2",   "2 hours"),
+        ("5-10", "*/2",   "2 hours"),
+        ("15-30", "*/3",  "3 hours"),
         # minute=list
         ("15,30,45", "*", ":15"),
         ("15,30,45", "9", "9:15 AM"),

@@ -70,7 +70,7 @@ def _cron_field(values: list[str]) -> st.SearchStrategy[str]:
     )
 
 
-_VALID_MINUTES = [str(i) for i in range(0, 60)] + ["*/5", "*/10", "*/15", "*/30", "0-14", "15,30,45"]
+_VALID_MINUTES = [str(i) for i in range(0, 60)] + ["*/5", "*/10", "*/15", "*/30", "0-14", "5-10", "15-30", "15,30,45"]
 _VALID_HOURS = [str(i) for i in range(0, 24)] + ["*/2", "*/3", "*/4", "*/6", "*/8", "*/12", "9-17", "8-18", "0,12", "9,13,17"]
 _VALID_DOMS = [str(i) for i in range(1, 32)] + ["*/4", "1-7", "8-14", "1-5", "L", "1-12,14-31"]
 _VALID_MONTHS = [str(i) for i in range(1, 13)] + ["1,4,7,10"]

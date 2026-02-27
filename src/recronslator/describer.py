@@ -87,6 +87,10 @@ def _describe_time(minute: str, hour: str) -> str:
         base = f"Every {interval} hour{'s' if interval != 1 else ''}"
         if minute == "*":
             return f"Every minute {base.lower()}"
+        mn_range = re.fullmatch(r"(\d+)-(\d+)", minute)
+        if mn_range:
+            span = _describe_minute_range(int(mn_range.group(1)), int(mn_range.group(2)))
+            return f"{base} {span}"
         mn_m = re.fullmatch(r"(\d+)", minute)
         if mn_m and int(mn_m.group(1)) != 0:
             return f"{base} at {_fmt_minute(int(mn_m.group(1)))}"
@@ -105,15 +109,14 @@ def _describe_time(minute: str, hour: str) -> str:
             return f"Every hour between {start} and {end}"
         return f"Every hour at {_fmt_minute(mn)} between {start} and {end}"
 
-    # Priority 3: minute range (e.g. "0-14")
+    # Priority 3: minute range (e.g. "0-14", "5-10")
     m = re.fullmatch(r"(\d+)-(\d+)", minute)
     if m:
         lo, hi = int(m.group(1)), int(m.group(2))
-        count = hi - lo + 1
+        span = _describe_minute_range(lo, hi)
         if hour == "*":
-            return f"Once per hour in the first {count} minutes"
-        hr_desc = _describe_hour_constraint(hour)
-        return f"In the first {count} minutes {hr_desc}"
+            return f"Once per hour {span}"
+        return f"{span.capitalize()} {_describe_hour_constraint(hour)}"
 
     # Priority 4: list patterns / specific values
     hours_list = _parse_field_list(hour)
@@ -199,6 +202,13 @@ def _fmt_hour(hour: int) -> str:
 
 def _fmt_minute(minute: int) -> str:
     return f":{minute:02d}"
+
+
+def _describe_minute_range(lo: int, hi: int) -> str:
+    """Human-readable phrase for a minute range field like '0-14' or '5-10'."""
+    if lo == 0:
+        return f"in the first {hi + 1} minutes"
+    return f"in minutes {_fmt_minute(lo)} through {_fmt_minute(hi)}"
 
 
 def _oxford_join(items: list[str]) -> str:
