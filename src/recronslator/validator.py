@@ -85,10 +85,23 @@ def validate_intent(intent: ScheduleIntent) -> None:
             if not 0 <= d <= 6:
                 raise ValueError(f"Day-of-week value {d} is out of range (0-6)")
 
+    if intent.excluded_days_of_week is not None:
+        for d in intent.excluded_days_of_week:
+            if not 0 <= d <= 6:
+                raise ValueError(
+                    f"Excluded day-of-week value {d} is out of range (0-6)"
+                )
+
     if intent.months is not None:
         for m in intent.months:
             if not 1 <= m <= 12:
                 raise ValueError(f"Month value {m} is out of range (1-12)")
+
+    if intent.month_interval is not None:
+        if not 1 <= intent.month_interval <= 12:
+            raise ValueError(
+                f"Month interval {intent.month_interval} is out of range (1-12)"
+            )
 
     if intent.last_weekday_of_month is not None:
         if not 0 <= intent.last_weekday_of_month <= 6:

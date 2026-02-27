@@ -206,6 +206,42 @@ class TestValidateIntentAdditionalBranches:
         with pytest.raises(ValueError, match="out of range"):
             validate_intent(ScheduleIntent(hour_interval=0))
 
+    def test_excluded_day_of_week_valid(self) -> None:
+        validate_intent(ScheduleIntent(weekday_only=True, excluded_days_of_week=[1, 5]))
+
+    def test_excluded_day_of_week_out_of_range_high(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            validate_intent(ScheduleIntent(weekday_only=True, excluded_days_of_week=[7]))
+
+    def test_excluded_day_of_week_out_of_range_low(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            validate_intent(ScheduleIntent(weekday_only=True, excluded_days_of_week=[-1]))
+
+    def test_month_interval_valid(self) -> None:
+        validate_intent(ScheduleIntent(month_interval=3))
+
+    def test_month_interval_zero(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            validate_intent(ScheduleIntent(month_interval=0))
+
+    def test_month_interval_too_large(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            validate_intent(ScheduleIntent(month_interval=13))
+
+    def test_last_weekday_of_month_valid(self) -> None:
+        validate_intent(ScheduleIntent(last_weekday_of_month=5))
+
+    def test_last_weekday_of_month_out_of_range_high(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            validate_intent(ScheduleIntent(last_weekday_of_month=7))
+
+    def test_last_weekday_of_month_out_of_range_low(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            validate_intent(ScheduleIntent(last_weekday_of_month=-1))
+
+    def test_ordinal_weekday_valid_nth_and_weekday(self) -> None:
+        validate_intent(ScheduleIntent(ordinal_weekday=(2, 3)))
+
 
 class TestCronExpressionValidateMethod:
     """CronExpression.validate() is a convenience method on the dataclass itself."""
