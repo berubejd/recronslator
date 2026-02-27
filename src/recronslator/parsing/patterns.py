@@ -182,7 +182,8 @@ def _parse_multiple_times(text: str) -> list[tuple[int, int]]:
     # Match patterns like "9am, 1pm and 5pm" or "6:30 and 18:30"
     pattern = re.compile(
         r"(\d{1,2}(?::\d{2})?\s*(?:am?|pm?)?)"
-        r"(?:\s*,\s*|\s+and\s+|\s*$)"
+        r"(?:\s*,\s*|\s+and\s+|\s*$"
+        r"|\s+(?:on|in|at|of|during|every|from|to|until|before|after|except)\b)"
     )
     tokens = pattern.findall(text)
     if not tokens:
@@ -324,11 +325,24 @@ def _p_hourly_ranged(text: str) -> ScheduleIntent | None:
     return ScheduleIntent(minutes=[0], hour_range=hr, weekday_only=weekday_only)
 
 
+@registry.register("colon_past_every_hour", priority=199)
+def _p_colon_past_every_hour(text: str) -> ScheduleIntent | None:
+    """at :NN past every hour [on weekdays] — e.g. 'at :30 past every hour'"""
+    m = re.search(r":(\d{2})\s+past\b", text)
+    if not m:
+        return None
+    mn = int(m.group(1))
+    weekday_only = bool(re.search(r"\bweekdays?\b", text))
+    return ScheduleIntent(minutes=[mn], weekday_only=weekday_only)
+
+
 @registry.register("shorthand_hourly", priority=200)
 def _p_shorthand_hourly(text: str) -> ScheduleIntent | None:
     """hourly / every hour (no time range — ranged form handled by hourly_ranged)"""
     if re.search(r"\bhourly\b", text) or re.search(r"\bevery\s+hour\b", text):
-        # Specific-minute shorthands take priority (210-214)
+        # Specific-minute shorthands take priority (199, 210-214)
+        if re.search(r":\d{2}\s+past\b", text):
+            return None
         if "half hour" in text or "half past" in text:
             return None
         if "quarter past" in text or "quarter after" in text:
@@ -490,6 +504,25 @@ def _p_on_the_hour(text: str) -> ScheduleIntent | None:
 # Priority 300 — Specific time enrichers (additive)
 # ---------------------------------------------------------------------------
 
+@registry.register("colon_times_list", priority=299, composite=False)
+def _e_colon_times_list(text: str) -> ScheduleIntent | None:
+    """at H:MM am, H:MM pm[, and H:MM pm] — two or more colon-format times"""
+    _token = r"\d{1,2}:\d{2}\s*(?:am?|pm?)?"
+    _sep = r"(?:\s*,\s*(?:and\s+)?|\s+and\s+)"
+    m = re.search(rf"\bat\s+({_token}(?:{_sep}{_token})+)", text)
+    if not m:
+        return None
+    raw_list = m.group(1)
+    parts = re.split(r"\s*,\s*(?:and\s+)?|\s+and\s+", raw_list)
+    times = [_parse_time_token(p.strip()) for p in parts if p.strip()]
+    if len(times) < 2:
+        return None
+    hours = sorted({h for h, _ in times})
+    minutes_set = {mn for _, mn in times}
+    mn = list(minutes_set)[0] if len(minutes_set) == 1 else 0
+    return ScheduleIntent(minutes=[mn], hours=hours)
+
+
 @registry.register("specific_time_with_minutes", priority=301, composite=False)
 def _e_specific_time_with_minutes(text: str) -> ScheduleIntent | None:
     """at H:MM [am/pm] — only for times with explicit minutes (colon format)"""
@@ -573,7 +606,7 @@ def _e_specific_times(text: str) -> ScheduleIntent | None:
     # Only trigger when we see "at" followed by multiple hour tokens
     m = re.search(
         r"\bat\s+((?:\d{1,2}\s*(?:am?|pm?)?"
-        r"(?:\s*,\s*|\s+and\s+))+\d{1,2}\s*(?:am?|pm?)?)",
+        r"(?:\s*,\s*(?:and\s+)?|\s+and\s+))+\d{1,2}\s*(?:am?|pm?)?)",
         text,
     )
     if not m:

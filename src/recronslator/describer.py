@@ -64,6 +64,11 @@ def _build_description(
 # ---------------------------------------------------------------------------
 
 def _describe_time(minute: str, hour: str) -> str:
+    # Priority 0: wildcard minute with constrained hour → "Every minute between X and Y"
+    # e.g. "* 9-17 * * *" → "Every minute between 9:00 AM and 5:00 PM"
+    if minute == "*" and hour != "*":
+        return f"Every minute {_describe_hour_constraint(hour)}"
+
     # Priority 1: interval in minute field
     m = re.fullmatch(r"\*/(\d+)", minute)
     if m:
