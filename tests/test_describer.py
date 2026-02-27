@@ -313,6 +313,12 @@ class TestUncoveredDescriberBranches:
         assert "Every 15 minutes" in result
         assert "in hour 0/2" in result
 
+    def test_deduped_single_hour_in_comma_field(self) -> None:
+        """Hour '5,5' deduplicates to [5] → _describe_hour_constraint must not
+        call _oxford_join with a 1-element list (would produce ', and 5:00 AM')."""
+        result = describe("*/15 5,5 * * *")
+        assert result == "Every 15 minutes at 5:00 AM"
+
     def test_deduped_single_dom_in_comma_field(self) -> None:
         """DOM '1,1' deduplicates to [1] → single-item comma-DOM path."""
         result = describe("0 0 1,1 * *")

@@ -139,7 +139,10 @@ def _describe_hour_constraint(hour: str) -> str:
     # Comma-separated hour list (e.g. "9,17" → "at 9:00 AM and 5:00 PM")
     hours = _parse_field_list(hour)
     if hours:
-        return f"at {_oxford_join([_fmt_hour(h) for h in hours])}"
+        formatted = [_fmt_hour(h) for h in hours]
+        if len(formatted) == 1:
+            return f"at {formatted[0]}"
+        return f"at {_oxford_join(formatted)}"
     return f"in hour {hour}"
 
 
