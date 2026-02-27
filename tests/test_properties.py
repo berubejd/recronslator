@@ -85,17 +85,9 @@ _valid_cron_strategy = st.builds(
     _cron_field(_VALID_DOWS),
 )
 
-# Idempotency strategy now uses the same field sets as the main strategy.
-# All previously-excluded categories (DOM ranges, step-hours, minute ranges,
-# multi-minute lists) are now stable thanks to Phases 1-3 fixes.
-_roundtrip_cron_strategy = st.builds(
-    lambda m, h, dom, mon, dow: f"{m} {h} {dom} {mon} {dow}",
-    _cron_field(_VALID_MINUTES),
-    _cron_field(_VALID_HOURS),
-    _cron_field(_VALID_DOMS),
-    _cron_field(_VALID_MONTHS),
-    _cron_field(_VALID_DOWS),
-)
+# Idempotency strategy was previously narrower; now identical to the main
+# strategy since all round-trip limitations have been fixed.
+_roundtrip_cron_strategy = _valid_cron_strategy
 
 
 @given(_valid_cron_strategy)

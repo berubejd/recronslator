@@ -26,6 +26,10 @@ from recronslator.parsing.helpers import (
 )
 from recronslator.parsing.registry import registry
 
+# Shared regex fragments
+_LIST_SEP = r"(?:\s*,\s*(?:and\s+)?|\s+and\s+)"
+_SPECIAL_NAME_ALT = "|".join(re.escape(k) for k in SPECIAL_TIMES)
+
 # ---------------------------------------------------------------------------
 # Interval composites (priorities 97-120)
 # ---------------------------------------------------------------------------
@@ -184,19 +188,19 @@ def _p_colon_past_every_hour(text: str) -> ScheduleIntent | None:
 @registry.register("shorthand_hourly", priority=200)
 def _p_shorthand_hourly(text: str) -> ScheduleIntent | None:
     """hourly / every hour (no time range -- ranged form handled by hourly_ranged)"""
-    if re.search(r"\bhourly\b", text) or re.search(r"\bevery\s+hour\b", text):
-        if re.search(r":\d{2}\s+past\b", text):
-            return None
-        if "half hour" in text or "half past" in text:
-            return None
-        if "quarter past" in text or "quarter after" in text:
-            return None
-        if re.search(r"\bquarter\s+(?:to|till|of)\b", text):
-            return None
-        if "between" in text or re.search(r"\bfrom\s+\d", text):
-            return None
-        return ScheduleIntent(minutes=[0])
-    return None
+    if not (re.search(r"\bhourly\b", text) or re.search(r"\bevery\s+hour\b", text)):
+        return None
+    if re.search(r":\d{2}\s+past\b", text):
+        return None
+    if "half hour" in text or "half past" in text:
+        return None
+    if "quarter past" in text or "quarter after" in text:
+        return None
+    if re.search(r"\bquarter\s+(?:to|till|of)\b", text):
+        return None
+    if "between" in text or re.search(r"\bfrom\s+\d", text):
+        return None
+    return ScheduleIntent(minutes=[0])
 
 
 @registry.register("twice_daily", priority=203)
@@ -273,23 +277,16 @@ def _e_mixed_times_list(text: str) -> ScheduleIntent | None:
     """at 8am, noon, and 6pm -- multiple times where one or more are special names."""
     if "per hour" in text:
         return None
-    special_names = "|".join(re.escape(k) for k in SPECIAL_TIMES)
     digit_token = r"\d{1,2}(?::\d{2})?\s*(?:am?|pm?)?"
-    token = rf"(?:{digit_token}|{special_names})"
-    sep = r"(?:\s*,\s*(?:and\s+)?|\s+and\s+)"
-    m = re.search(rf"\bat\s+({token}(?:{sep}{token})+)", text)
+    token = rf"(?:{digit_token}|{_SPECIAL_NAME_ALT})"
+    m = re.search(rf"\bat\s+({token}(?:{_LIST_SEP}{token})+)", text)
     if not m:
         return None
     raw_list = m.group(1)
     if not any(re.search(r"\b" + k + r"\b", raw_list) for k in SPECIAL_TIMES):
         return None
-    parts = re.split(r"\s*,\s*(?:and\s+)?|\s+and\s+", raw_list)
-    times: list[tuple[int, int]] = []
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        times.append(parse_time_token(part))
+    parts = re.split(_LIST_SEP, raw_list)
+    times = [parse_time_token(p.strip()) for p in parts if p.strip()]
     if len(times) < 2:
         return None
     hours = sorted({h for h, _ in times})
@@ -302,12 +299,11 @@ def _e_mixed_times_list(text: str) -> ScheduleIntent | None:
 def _e_colon_times_list(text: str) -> ScheduleIntent | None:
     """at H:MM am, H:MM pm[, and H:MM pm] -- two or more colon-format times"""
     _token = r"\d{1,2}:\d{2}\s*(?:am?|pm?)?"
-    _sep = r"(?:\s*,\s*(?:and\s+)?|\s+and\s+)"
-    m = re.search(rf"\bat\s+({_token}(?:{_sep}{_token})+)", text)
+    m = re.search(rf"\bat\s+({_token}(?:{_LIST_SEP}{_token})+)", text)
     if not m:
         return None
     raw_list = m.group(1)
-    parts = re.split(r"\s*,\s*(?:and\s+)?|\s+and\s+", raw_list)
+    parts = re.split(_LIST_SEP, raw_list)
     times = [parse_time_token(p.strip()) for p in parts if p.strip()]
     if len(times) < 2:
         return None
@@ -340,8 +336,7 @@ def _e_specific_times(text: str) -> ScheduleIntent | None:
     if "per hour" in text:
         return None
     m = re.search(
-        r"\bat\s+((?:\d{1,2}\s*(?:am?|pm?)?"
-        r"(?:\s*,\s*(?:and\s+)?|\s+and\s+))+\d{1,2}\s*(?:am?|pm?)?)",
+        rf"\bat\s+((?:\d{{1,2}}\s*(?:am?|pm?)?{_LIST_SEP})+\d{{1,2}}\s*(?:am?|pm?)?)",
         text,
     )
     if not m:

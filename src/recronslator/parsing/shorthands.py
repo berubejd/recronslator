@@ -77,9 +77,12 @@ def _p_shorthand_monthly(text: str) -> ScheduleIntent | None:
     if not (re.search(r"\bmonthly\b", text) or re.search(r"\bevery\s+month\b", text)):
         return None
     has_dom = _text_has_explicit_dom(text)
-    if _text_has_explicit_time(text):
-        return ScheduleIntent() if has_dom else ScheduleIntent(days_of_month=[1])
-    return ScheduleIntent() if has_dom else ScheduleIntent(minutes=[0], hours=[0], days_of_month=[1])
+    has_time = _text_has_explicit_time(text)
+    if has_dom:
+        return ScheduleIntent()
+    if has_time:
+        return ScheduleIntent(days_of_month=[1])
+    return ScheduleIntent(minutes=[0], hours=[0], days_of_month=[1])
 
 
 @registry.register("shorthand_quarterly", priority=207)
@@ -88,6 +91,11 @@ def _p_shorthand_quarterly(text: str) -> ScheduleIntent | None:
     if not re.search(r"\bquarterly\b", text):
         return None
     has_dom = _text_has_explicit_dom(text)
-    if _text_has_explicit_time(text):
-        return ScheduleIntent(months=QUARTER_MONTHS) if has_dom else ScheduleIntent(months=QUARTER_MONTHS, days_of_month=[1])
-    return ScheduleIntent(months=QUARTER_MONTHS) if has_dom else ScheduleIntent(minutes=[0], hours=[0], months=QUARTER_MONTHS, days_of_month=[1])
+    has_time = _text_has_explicit_time(text)
+    if has_dom:
+        return ScheduleIntent(months=QUARTER_MONTHS)
+    if has_time:
+        return ScheduleIntent(months=QUARTER_MONTHS, days_of_month=[1])
+    return ScheduleIntent(
+        minutes=[0], hours=[0], months=QUARTER_MONTHS, days_of_month=[1],
+    )

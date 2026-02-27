@@ -1,13 +1,10 @@
 """Roundtrip tests: forward pipeline correctness, describe quality, and stability.
 
-Three complementary test layers:
+Two complementary test layers:
 1. test_forward_and_describe_keywords  — English → cron is correct AND the
    description contains the expected semantic tokens.
 2. test_cron_to_english_to_cron_stable — cron → English → cron produces the
    identical cron expression (full stability).
-3. TestKnownLimitations                — expressions whose descriptions are
-   correct but cannot re-parse back to the identical cron due to known parser
-   gaps.  Kept here so regressions surface immediately.
 """
 
 import warnings
@@ -314,6 +311,3 @@ def test_cron_to_english_to_cron_stable(cron: str) -> None:
         f"describe({cron!r}) = {english!r}\n"
         f"cronslate({english!r}) = {recron!r}"
     )
-
-
-
