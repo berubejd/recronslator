@@ -70,8 +70,8 @@ def _cron_field(values: list[str]) -> st.SearchStrategy[str]:
     )
 
 
-_VALID_MINUTES = [str(i) for i in range(0, 60)] + ["*/5", "*/10", "*/15", "*/30", "0-14", "15,30,45"]
-_VALID_HOURS = [str(i) for i in range(0, 24)] + ["*/2", "9-17", "0,12"]
+_VALID_MINUTES = [str(i) for i in range(0, 60)] + ["*/5", "*/10", "*/15", "*/30", "0-14", "5-10", "15-30", "15,30,45"]
+_VALID_HOURS = [str(i) for i in range(0, 24)] + ["*/2", "*/3", "*/4", "*/6", "*/8", "*/12", "9-17", "8-18", "0,12", "9,13,17"]
 _VALID_DOMS = [str(i) for i in range(1, 32)] + ["*/4", "1-7", "8-14", "1-5", "L", "1-12,14-31"]
 _VALID_MONTHS = [str(i) for i in range(1, 13)] + ["1,4,7,10"]
 _VALID_DOWS = [str(i) for i in range(0, 7)] + ["1-5", "0,6", "1,5"]
@@ -84,6 +84,10 @@ _valid_cron_strategy = st.builds(
     _cron_field(_VALID_MONTHS),
     _cron_field(_VALID_DOWS),
 )
+
+# Idempotency strategy was previously narrower; now identical to the main
+# strategy since all round-trip limitations have been fixed.
+_roundtrip_cron_strategy = _valid_cron_strategy
 
 
 @given(_valid_cron_strategy)
@@ -101,6 +105,60 @@ def test_describe_valid_cron_doesnt_crash(expr: str) -> None:
         assert len(result) > 0, f"describe({expr!r}) returned empty string"
     except ValueError:
         pass  # Expected for some structurally unusual combinations
+
+
+@given(_valid_cron_strategy)
+@settings(max_examples=500)
+def test_describe_never_leaks_raw_cron_syntax(expr: str) -> None:
+    """describe() must translate every cron field to English — never echo raw syntax.
+
+    Patterns like '*/N' or sentinel phrases like 'in hour' / 'on day-of-week'
+    appearing in the output indicate a describe path fell through to its raw
+    fallback.  The '* */2 * * *' regression is the canonical example: Priority 0
+    intercepted the step-hour pattern and produced 'Every minute in hour */2'
+    instead of 'Every 2 hours'.
+    """
+    try:
+        english = recronslator.describe(expr)
+        assert not re.search(r"\*/\d+", english), (
+            f"describe({expr!r}) leaked raw step syntax: {english!r}"
+        )
+        assert "in hour " not in english.lower(), (
+            f"describe({expr!r}) used raw hour fallback: {english!r}"
+        )
+        assert "in month " not in english.lower(), (
+            f"describe({expr!r}) used raw month fallback: {english!r}"
+        )
+        assert "on day-of-week " not in english.lower(), (
+            f"describe({expr!r}) used raw dow fallback: {english!r}"
+        )
+    except ValueError:
+        pass
+
+
+@given(_roundtrip_cron_strategy)
+@settings(max_examples=300)
+def test_describe_cronslate_describe_idempotent(expr: str) -> None:
+    """describe → cronslate → describe must converge: second describe equals first.
+
+    If the pipeline is internally consistent, applying describe twice through
+    cronslate should produce the same English both times.  A failure here means
+    the describer and parser disagree on what a cron expression means.
+    """
+    try:
+        english1 = recronslator.describe(expr)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            recron = recronslator.cronslate(english1)
+        english2 = recronslator.describe(recron)
+        assert english1 == english2, (
+            f"describe→cronslate→describe not idempotent:\n"
+            f"  describe({expr!r})         = {english1!r}\n"
+            f"  cronslate({english1!r}) = {recron!r}\n"
+            f"  describe({recron!r})   = {english2!r}"
+        )
+    except ValueError:
+        pass  # Unparseable intermediate is acceptable
 
 
 @given(st.text(min_size=0, max_size=500))

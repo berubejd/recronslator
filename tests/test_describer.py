@@ -1,5 +1,7 @@
 """Unit tests for the describer module (CronExpression → English)."""
 
+import re
+
 import pytest
 
 from recronslator.describer import _oxford_join, describe
@@ -32,6 +34,13 @@ class TestIntervalDescriptions:
 
     def test_every_2_hours_at_zero_unchanged(self) -> None:
         assert describe("0 */2 * * *") == "Every 2 hours"
+
+    def test_wildcard_minute_step_hour_distinguished(self) -> None:
+        """'* */N * * *' must say 'Every minute every N hours', not 'Every N hours'
+        (which is '0 */N * * *'). The original regression was 'Every minute in hour */2'."""
+        assert describe("* */2 * * *") == "Every minute every 2 hours"
+        assert describe("* */3 * * *") == "Every minute every 3 hours"
+        assert describe("* */4 * * *") == "Every minute every 4 hours"
 
     def test_step_minute_with_hour_list(self) -> None:
         assert describe("*/15 9,17 * * *") == "Every 15 minutes at 9:00 AM and 5:00 PM"
@@ -194,6 +203,11 @@ class TestMinuteRangeDescriptions:
         result = describe("0-14 * * * *")
         assert "15" in result or "first" in result.lower()
 
+    def test_nonzero_minute_range_preserves_bounds(self) -> None:
+        result = describe("5-10 * * * *")
+        assert ":05" in result
+        assert ":10" in result
+
 
 class TestInvalidExpressions:
     def test_wrong_field_count(self) -> None:
@@ -350,6 +364,61 @@ class TestUncoveredDescriberBranches:
         # _parse_field_list returns None and the raw field is emitted.
         result = describe("0 0 1 1/3 *")
         assert "in month 1/3" in result
+
+
+class TestMinuteHourMatrix:
+    """Explicit matrix of (minute-type) × (hour-type) combinations for _describe_time.
+
+    This guards against priority-order bugs where one field type intercepts
+    another.  The '* */2 * * *' regression ('Every minute in hour */2') is the
+    canonical failure this matrix catches.
+
+    Five minute types  × five hour types = 25 combinations.
+    """
+
+    @pytest.mark.parametrize("minute,hour,expected_fragment", [
+        # minute=* (wildcard) — Priority 0 / Priority 2 interaction
+        ("*",    "*",     "Every minute"),
+        ("*",    "*/2",   "Every minute every 2 hours"),
+        ("*",    "*/3",   "Every minute every 3 hours"),
+        ("*",    "9",     "Every minute at"),
+        ("*",    "9-17",  "Every minute between"),
+        ("*",    "9,17",  "Every minute at"),
+        # minute=*/N (step) — Priority 1
+        ("*/15", "*",     "Every 15 minutes"),
+        ("*/15", "*/2",   "Every 15 minutes every 2 hours"),
+        ("*/30", "9-17",  "Every 30 minutes"),
+        ("*/30", "9",     "Every 30 minutes at"),
+        ("*/30", "9,17",  "Every 30 minutes at"),
+        # minute=specific (single value)
+        ("0",    "*",     ":00"),
+        ("0",    "*/2",   "Every 2 hours"),
+        ("0",    "9-17",  "Every hour between"),
+        ("0",    "9,17",  "9:00 AM"),
+        ("30",   "*/2",   "Every 2 hours at :30"),
+        # minute=range
+        ("0-14", "*",     "first 15 minutes"),
+        ("0-14", "9",     "first 15 minutes at 9:00 AM"),
+        ("5-10", "*",     "minutes :05 through :10"),
+        ("5-10", "9",     "minutes :05 through :10 at 9:00 AM"),
+        ("0-14", "*/2",   "2 hours"),
+        ("5-10", "*/2",   "2 hours"),
+        ("15-30", "*/3",  "3 hours"),
+        # minute=list
+        ("15,30,45", "*", ":15"),
+        ("15,30,45", "9", "9:15 AM"),
+    ])
+    def test_time_field_combination(
+        self, minute: str, hour: str, expected_fragment: str
+    ) -> None:
+        result = describe(f"{minute} {hour} * * *")
+        assert expected_fragment.lower() in result.lower(), (
+            f"describe('{minute} {hour} * * *') = {result!r}; "
+            f"expected {expected_fragment!r} in output"
+        )
+        assert not re.search(r"\*/\d+", result), (
+            f"describe('{minute} {hour} * * *') leaked raw step syntax: {result!r}"
+        )
 
 
 class TestOxfordJoin:

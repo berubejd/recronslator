@@ -146,6 +146,10 @@ class TestTimeEnrichers:
         intent = p("once per hour in the first 15 minutes")
         assert intent.minute_range == (0, 14)
 
+    def test_minute_range_span(self) -> None:
+        intent = p("once per hour in minutes :05 through :10")
+        assert intent.minute_range == (5, 10)
+
     def test_times_per_hour(self) -> None:
         intent = p("3 times per hour at 15, 30, and 45 minutes")
         assert intent.minutes == [15, 30, 45]

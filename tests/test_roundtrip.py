@@ -1,13 +1,10 @@
 """Roundtrip tests: forward pipeline correctness, describe quality, and stability.
 
-Three complementary test layers:
+Two complementary test layers:
 1. test_forward_and_describe_keywords  — English → cron is correct AND the
    description contains the expected semantic tokens.
 2. test_cron_to_english_to_cron_stable — cron → English → cron produces the
    identical cron expression (full stability).
-3. TestKnownLimitations                — expressions whose descriptions are
-   correct but cannot re-parse back to the identical cron due to known parser
-   gaps.  Kept here so regressions surface immediately.
 """
 
 import warnings
@@ -216,6 +213,20 @@ def cronslate(text: str) -> str:
         ("Last friday of the month at 9am",
          "0 9 * * 5L",
          ["last Friday", "9:00 AM"]),
+
+        # --- every-minute ranged (PR fix) ---
+        ("Every minute from 9am to 5pm",
+         "* 9-17 * * *",
+         ["minute", "9:00 AM", "5:00 PM"]),
+
+        ("Every minute between 9am and 5pm on weekdays",
+         "* 9-17 * * 1-5",
+         ["minute", "9:00 AM", "5:00 PM", "weekday"]),
+
+        # --- Oxford-comma multi-time fix ---
+        ("At 3pm, 4pm, and 6pm",
+         "0 15,16,18 * * *",
+         ["3:00 PM", "4:00 PM", "6:00 PM"]),
     ],
 )
 def test_forward_and_describe_keywords(
@@ -267,6 +278,31 @@ def test_forward_and_describe_keywords(
         "0 9-17 * * *",        # hourly with range
         "0 9-17 * * 1-5",      # hourly with range on weekdays
         "0 8-18 * * *",        # hourly with range (wider window)
+        "0 */2 * * *",         # hour interval
+        # Describer + parser fixes (previously Layer 3)
+        "30 * * * *",          # :N past every hour
+        "15 * * * 1-5",        # :N past every hour on weekdays
+        "0 2,14 * * *",        # two colon-format times
+        "0 9,13,17 * * 1-5",   # three colon-format times on weekdays
+        "30 6,18 * * *",       # colon-format times with non-zero minute
+        "* 9-17 * * *",        # every minute with hour range
+        "* 9-17 * * 3",        # every minute with hour range + specific dow
+        "* 9-17 * * 1-5",      # every minute with hour range on weekdays
+        # Phase 1-3 fixes (all previously Layer 3 / broken)
+        "30 */2 * * *",        # step-hour + nonzero minute (RC2)
+        "15 */3 * * *",        # step-hour + nonzero minute (RC2)
+        "45 8 1-12,14-31 * *", # exception day without weekday (RC6)
+        "* */2 * * *",         # wildcard minute + step-hour (RC3)
+        "* */3 * * 1-5",       # wildcard minute + step-hour + weekday (RC3)
+        "0 6 1-5 1,4,7,10 *",  # DOM range + quarter (RC1)
+        "0 0 1-7 * *",         # DOM range simple (RC1)
+        "15,30,45 * * * *",    # multi-minute list (RC5)
+        "15,30,45 9 * * *",    # multi-minute list + specific hour (RC5)
+        "0-14 9 * * *",        # minute range + specific hour (RC4)
+        "5-10 * * * *",        # non-zero minute range (wildcard hour)
+        "5-10 9 * * *",        # non-zero minute range + specific hour
+        "15-30 */2 * * *",     # non-zero minute range + step hour
+        "0-14 */2 * * *",      # zero-start minute range + step hour
     ],
 )
 def test_cron_to_english_to_cron_stable(cron: str) -> None:
@@ -279,60 +315,3 @@ def test_cron_to_english_to_cron_stable(cron: str) -> None:
         f"describe({cron!r}) = {english!r}\n"
         f"cronslate({english!r}) = {recron!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Layer 3 — Known limitations (descriptions are correct but not re-parseable)
-# ---------------------------------------------------------------------------
-
-class TestKnownLimitations:
-    """These cron expressions produce correct descriptions but cannot round-trip
-    back to the same cron.  Tests assert the *current* (imperfect) re-parse
-    result so any regression is immediately visible.
-
-    Root causes are documented inline.
-    """
-
-    def test_half_past_every_hour(self) -> None:
-        # '30 * * * *' → 'At :30 past every hour'
-        # _p_shorthand_hourly fires on "every hour" and sets minutes=[0];
-        # the :30 enricher cannot override an already-set minutes field.
-        english = recronslator.describe("30 * * * *")
-        assert ":30" in english
-        assert cronslate(english) == "0 * * * *"  # loses the :30
-
-    def test_specific_minute_on_weekdays(self) -> None:
-        # '15 * * * 1-5' → 'At :15 past every hour on weekdays'
-        # Same root cause as above.
-        english = recronslator.describe("15 * * * 1-5")
-        assert ":15" in english
-        assert cronslate(english) == "0 * * * 1-5"  # loses the :15
-
-    def test_two_colon_times(self) -> None:
-        # '0 2,14 * * *' → 'At 2:00 AM and 2:00 PM'
-        # _e_specific_time_with_minutes only captures the first colon-format
-        # time token; the second is silently dropped.
-        english = recronslator.describe("0 2,14 * * *")
-        assert "2:00 AM" in english and "2:00 PM" in english
-        assert cronslate(english) == "0 2 * * *"  # loses 14:00
-
-    def test_three_colon_times_on_weekdays(self) -> None:
-        # '0 9,13,17 * * 1-5' → 'At 9:00 AM, 1:00 PM, and 5:00 PM on weekdays'
-        # Same root cause — only first colon-time is parsed back.
-        english = recronslator.describe("0 9,13,17 * * 1-5")
-        assert "9:00 AM" in english
-        assert cronslate(english) == "0 9 * * 1-5"
-
-    def test_two_colon_times_different_hours(self) -> None:
-        # '30 6,18 * * *' → 'At 6:30 AM and 6:30 PM'
-        english = recronslator.describe("30 6,18 * * *")
-        assert "6:30 AM" in english and "6:30 PM" in english
-        assert cronslate(english) == "30 6 * * *"
-
-    def test_first_n_days_of_quarter(self) -> None:
-        # '0 6 1-5 1,4,7,10 *' → 'At 6:00 AM on days 1-5 of the month each quarter'
-        # "on days 1-5" is not a recognised parser phrase; only the quarter
-        # months are recovered.
-        english = recronslator.describe("0 6 1-5 1,4,7,10 *")
-        assert "6:00 AM" in english and "quarter" in english.lower()
-        assert cronslate(english) == "0 6 * 1,4,7,10 *"  # loses dom range
