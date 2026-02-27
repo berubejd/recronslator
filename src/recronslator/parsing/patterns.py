@@ -215,10 +215,17 @@ def _parse_multiple_times(text: str) -> list[tuple[int, int]]:
 
 @registry.register("every_minute", priority=99)
 def _p_every_minute(text: str) -> ScheduleIntent | None:
-    """every minute (no explicit number)"""
-    if re.search(r"\bevery\s+minute\b", text):
-        return ScheduleIntent(minute_interval=1)
-    return None
+    """every minute (no explicit number, no time range)"""
+    if not re.search(r"\bevery\s+minute\b", text):
+        return None
+    # Time-ranged forms ("every minute between X and Y") are not expressible as
+    # a simple minute_interval=1 — no additive enricher recovers hour_range.
+    # Defer these so they raise ValueError rather than silently drop the constraint.
+    if "between" in text or re.search(r"\bfrom\s+\d", text):
+        return None
+    if "business hours" in text:
+        return None
+    return ScheduleIntent(minute_interval=1)
 
 
 @registry.register("minute_interval_ranged", priority=100)
@@ -797,8 +804,8 @@ def _e_day_exception(text: str) -> ScheduleIntent | None:
 
 @registry.register("quarter_months", priority=600, composite=False)
 def _e_quarter_months(text: str) -> ScheduleIntent | None:
-    """each quarter / every quarter / quarterly (not 'quarter hour' or 'quarter past')"""
-    if re.search(r"\b(?:each|every)\s+quarter\b(?!\s+(?:hour|past))", text):
+    """each quarter / every quarter / quarterly (not 'quarter hour/past/to/till/of')"""
+    if re.search(r"\b(?:each|every)\s+quarter\b(?!\s+(?:hour|past|to|till|of))", text):
         return ScheduleIntent(months=QUARTER_MONTHS)
     # "quarterly" is handled by the shorthand_quarterly composite (priority 207)
     # which also pre-fills DOM=1 when no explicit day is given.

@@ -59,6 +59,22 @@ class TestIntervals:
     def test_interval_short_meridiem_between_and(self) -> None:
         assert cronslate("every 30 minutes between 9a and 5p on weekdays") == "*/30 9-17 * * 1-5"
 
+    def test_every_minute_with_between_range_raises(self) -> None:
+        """Bug regression: 'every minute between X and Y' silently produced '* * * * *'
+        by matching _p_every_minute (priority 99) before _p_minute_interval_ranged,
+        dropping the hour range entirely."""
+        with pytest.raises(ValueError):
+            cronslate("every minute between 9am and 5pm")
+
+    def test_every_minute_with_from_to_range_raises(self) -> None:
+        """Same silent-drop bug via 'from X to Y' phrasing."""
+        with pytest.raises(ValueError):
+            cronslate("every minute from 9am to 5pm")
+
+    def test_every_minute_on_weekdays_still_works(self) -> None:
+        """Weekday constraint is additive and recoverable; must still be accepted."""
+        assert cronslate("every minute on weekdays") == "* * * * 1-5"
+
 
 class TestHourlyRanged:
     def test_every_hour_between_am_pm(self) -> None:
@@ -137,6 +153,18 @@ class TestShorthands:
 
     def test_quarter_of(self) -> None:
         assert cronslate("at quarter of each hour") == "45 * * * *"
+
+    def test_every_quarter_to_no_spurious_months(self) -> None:
+        """Regression: _e_quarter_months must not fire when 'every quarter to/till/of'
+        is present — both 'every' and 'quarter' appear but this is a time phrase,
+        not a months-of-the-year qualifier."""
+        assert cronslate("every quarter to each hour") == "45 * * * *"
+
+    def test_every_quarter_of_no_spurious_months(self) -> None:
+        assert cronslate("every quarter of each hour") == "45 * * * *"
+
+    def test_each_quarter_till_no_spurious_months(self) -> None:
+        assert cronslate("each quarter till") == "45 * * * *"
 
     def test_on_the_hour(self) -> None:
         assert cronslate("on the hour") == "0 * * * *"

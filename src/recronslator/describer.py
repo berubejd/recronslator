@@ -204,6 +204,8 @@ def _parse_field_list(field: str) -> list[int] | None:
             values.extend(range(int(lo), int(hi) + 1))
         elif "/" in part:
             return None  # Step pattern; caller handles separately
+        elif re.fullmatch(r"\d+L", part):
+            return None  # NL notation; caller handles separately
         else:
             values.append(int(part))
     return sorted(set(values))
@@ -220,9 +222,11 @@ def _describe_day(dom: str, dow: str) -> str:
     if dow_desc and dom_desc:
         # Ordinal weekday pattern: dom_desc already embeds the day name
         # (e.g. "on the first Monday of every month"), so dow_desc ("every Monday")
-        # would be redundant.  Detect by the 7-day dom range that encodes ordinals.
+        # would be redundant.  Only suppress when _describe_dom actually took the
+        # ordinal path — which requires both a 7-day DOM range AND a single DOW value.
         m = re.fullmatch(r"(\d+)-(\d+)", dom)
-        if m and int(m.group(2)) - int(m.group(1)) == 6:
+        dow_val = _parse_field_list(dow)
+        if m and int(m.group(2)) - int(m.group(1)) == 6 and dow_val and len(dow_val) == 1:
             return dom_desc
         return f"{dom_desc} {dow_desc}"
     return dow_desc or dom_desc or ""
@@ -331,7 +335,7 @@ def _describe_month(month: str) -> str:
         n = int(m.group(1))
         if n == 2:
             return "every other month"
-        return f"every {n} months"
+        return f"every {n} month{'s' if n != 1 else ''}"
     months = _parse_field_list(month)
     if months is None:
         return f"in month {month}"

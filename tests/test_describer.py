@@ -50,7 +50,7 @@ class TestDomDescriptions:
         assert "1st" in result and "8th" in result and "15th" in result
 
 
-class TestMonthDescriptions:
+class TestMonthStepDescriptions:
     def test_month_step_3(self) -> None:
         result = describe("0 0 1 */3 *")
         assert "every 3 months" in result
@@ -73,6 +73,20 @@ class TestLastWeekdayDescriptions:
     def test_last_sunday(self) -> None:
         result = describe("0 12 * * 0L")
         assert "last Sunday" in result
+
+    def test_nl_dow_with_specific_dom_does_not_crash(self) -> None:
+        """Regression: _parse_field_list('5L') crashed with ValueError when
+        called from _describe_day/_describe_dom with a non-wildcard DOM."""
+        result = describe("0 9 1 * 5L")
+        assert "9:00 AM" in result
+        assert "1st" in result
+        assert "last Friday" in result
+
+    def test_nl_dow_with_specific_dom_ordinal_range(self) -> None:
+        """NL DOW combined with a 7-day DOM range must not crash."""
+        result = describe("0 9 1-7 * 5L")
+        assert "9:00 AM" in result
+        assert "last Friday" in result
 
 
 class TestSpecificTimeDescriptions:
@@ -132,6 +146,28 @@ class TestDayDescriptions:
         assert "first" in result.lower() or "1st" in result
         assert "Monday" in result
 
+    def test_seven_day_dom_range_with_weekdays_dow(self) -> None:
+        """Bug regression: '1-7 * 1-5' dropped 'on weekdays' because the 7-day
+        range check in _describe_day was too broad — it suppressed dow_desc for
+        any 7-consecutive-day range, not just genuine ordinal weekday encodings."""
+        result = describe("0 0 1-7 * 1-5")
+        assert "weekday" in result.lower()
+        assert "1-7" in result or "days" in result.lower()
+
+    def test_seven_day_dom_range_with_multi_dow(self) -> None:
+        """Same bug: multiple DOW values with a 7-day range should not drop the DOW."""
+        result = describe("0 0 1-7 * 1,3")
+        assert "Monday" in result
+        assert "Wednesday" in result
+
+    def test_ordinal_weekday_still_suppresses_redundant_dow(self) -> None:
+        """Genuine ordinal encoding (single DOW + 7-day DOM range) must still
+        suppress the redundant dow_desc so we don't produce
+        'on the first Monday ... every Monday'."""
+        result = describe("0 0 1-7 * 1")
+        assert "first Monday" in result.lower() or ("first" in result.lower() and "Monday" in result)
+        assert result.count("Monday") == 1
+
     def test_day_interval(self) -> None:
         result = describe("0 12 */4 * *")
         assert "4" in result
@@ -145,6 +181,12 @@ class TestMonthDescriptions:
     def test_specific_month(self) -> None:
         result = describe("0 0 1 3 *")
         assert "March" in result
+
+    def test_month_step_1_singular(self) -> None:
+        """Regression: */1 must produce 'every 1 month', not 'every 1 months'."""
+        result = describe("0 0 1 */1 *")
+        assert "every 1 month" in result
+        assert "every 1 months" not in result
 
 
 class TestMinuteRangeDescriptions:
