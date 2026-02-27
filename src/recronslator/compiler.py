@@ -57,6 +57,8 @@ def _compile_minute(intent: ScheduleIntent) -> str:
         return f"{lo}-{hi}"
 
     if intent.minute_interval is not None:
+        if intent.minute_interval == 1:
+            return "*"
         return f"*/{intent.minute_interval}"
 
     if intent.minutes is not None:
@@ -82,11 +84,14 @@ def _has_day_constraint(intent: ScheduleIntent) -> bool:
         intent.day_interval is not None,
         intent.last_day_of_month,
         intent.ordinal_weekday is not None,
+        intent.last_weekday_of_month is not None,
         intent.days_of_week is not None,
         intent.weekday_only,
         intent.weekend_only,
         intent.months is not None,
+        intent.month_interval is not None,
         intent.excluded_days_of_month is not None,
+        intent.excluded_days_of_week is not None,
     ])
 
 
@@ -145,6 +150,8 @@ def _compile_day_of_month(intent: ScheduleIntent) -> str:
 
 
 def _compile_month(intent: ScheduleIntent) -> str:
+    if intent.month_interval is not None:
+        return f"*/{intent.month_interval}"
     if intent.months is not None:
         return ",".join(str(m) for m in sorted(intent.months))
     return "*"
@@ -161,8 +168,16 @@ def _compile_day_of_week(intent: ScheduleIntent) -> str:
         _, weekday = intent.ordinal_weekday
         return str(weekday)
 
+    if intent.last_weekday_of_month is not None:
+        return f"{intent.last_weekday_of_month}L"
+
+    if intent.excluded_days_of_week is not None:
+        excluded = set(intent.excluded_days_of_week)
+        remaining = sorted(d for d in range(0, 7) if d not in excluded)
+        return _days_to_ranges(remaining)
+
     if intent.days_of_week is not None:
-        return ",".join(str(d) for d in sorted(intent.days_of_week))
+        return _days_to_ranges(sorted(intent.days_of_week))
 
     return "*"
 

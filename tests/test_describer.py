@@ -2,7 +2,7 @@
 
 import pytest
 
-from recronslator.describer import describe
+from recronslator.describer import _oxford_join, describe
 
 
 class TestIntervalDescriptions:
@@ -23,6 +23,70 @@ class TestIntervalDescriptions:
 
     def test_every_2_hours(self) -> None:
         assert describe("0 */2 * * *") == "Every 2 hours"
+
+    def test_every_2_hours_at_half_past(self) -> None:
+        assert describe("30 */2 * * *") == "Every 2 hours at :30"
+
+    def test_every_3_hours_at_15(self) -> None:
+        assert describe("15 */3 * * *") == "Every 3 hours at :15"
+
+    def test_every_2_hours_at_zero_unchanged(self) -> None:
+        assert describe("0 */2 * * *") == "Every 2 hours"
+
+    def test_step_minute_with_hour_list(self) -> None:
+        assert describe("*/15 9,17 * * *") == "Every 15 minutes at 9:00 AM and 5:00 PM"
+
+    def test_step_minute_with_three_hour_list(self) -> None:
+        result = describe("*/30 9,12,17 * * *")
+        assert "9:00 AM" in result and "12:00 PM" in result and "5:00 PM" in result
+
+
+class TestDomDescriptions:
+    def test_day_list_two(self) -> None:
+        assert describe("0 0 1,15 * *") == "At midnight on the 1st and 15th of every month"
+
+    def test_day_list_three(self) -> None:
+        result = describe("0 0 1,8,15 * *")
+        assert "1st" in result and "8th" in result and "15th" in result
+
+
+class TestMonthStepDescriptions:
+    def test_month_step_3(self) -> None:
+        result = describe("0 0 1 */3 *")
+        assert "every 3 months" in result
+
+    def test_month_step_2(self) -> None:
+        result = describe("0 0 1 */2 *")
+        assert "every other month" in result
+
+
+class TestLastWeekdayDescriptions:
+    def test_last_friday(self) -> None:
+        result = describe("0 9 * * 5L")
+        assert "last Friday" in result
+        assert "9:00 AM" in result
+
+    def test_last_monday(self) -> None:
+        result = describe("0 0 * * 1L")
+        assert "last Monday" in result
+
+    def test_last_sunday(self) -> None:
+        result = describe("0 12 * * 0L")
+        assert "last Sunday" in result
+
+    def test_nl_dow_with_specific_dom_does_not_crash(self) -> None:
+        """Regression: _parse_field_list('5L') crashed with ValueError when
+        called from _describe_day/_describe_dom with a non-wildcard DOM."""
+        result = describe("0 9 1 * 5L")
+        assert "9:00 AM" in result
+        assert "1st" in result
+        assert "last Friday" in result
+
+    def test_nl_dow_with_specific_dom_ordinal_range(self) -> None:
+        """NL DOW combined with a 7-day DOM range must not crash."""
+        result = describe("0 9 1-7 * 5L")
+        assert "9:00 AM" in result
+        assert "last Friday" in result
 
 
 class TestSpecificTimeDescriptions:
@@ -82,6 +146,28 @@ class TestDayDescriptions:
         assert "first" in result.lower() or "1st" in result
         assert "Monday" in result
 
+    def test_seven_day_dom_range_with_weekdays_dow(self) -> None:
+        """Bug regression: '1-7 * 1-5' dropped 'on weekdays' because the 7-day
+        range check in _describe_day was too broad — it suppressed dow_desc for
+        any 7-consecutive-day range, not just genuine ordinal weekday encodings."""
+        result = describe("0 0 1-7 * 1-5")
+        assert "weekday" in result.lower()
+        assert "1-7" in result or "days" in result.lower()
+
+    def test_seven_day_dom_range_with_multi_dow(self) -> None:
+        """Same bug: multiple DOW values with a 7-day range should not drop the DOW."""
+        result = describe("0 0 1-7 * 1,3")
+        assert "Monday" in result
+        assert "Wednesday" in result
+
+    def test_ordinal_weekday_still_suppresses_redundant_dow(self) -> None:
+        """Genuine ordinal encoding (single DOW + 7-day DOM range) must still
+        suppress the redundant dow_desc so we don't produce
+        'on the first Monday ... every Monday'."""
+        result = describe("0 0 1-7 * 1")
+        assert "first Monday" in result.lower() or ("first" in result.lower() and "Monday" in result)
+        assert result.count("Monday") == 1
+
     def test_day_interval(self) -> None:
         result = describe("0 12 */4 * *")
         assert "4" in result
@@ -95,6 +181,12 @@ class TestMonthDescriptions:
     def test_specific_month(self) -> None:
         result = describe("0 0 1 3 *")
         assert "March" in result
+
+    def test_month_step_1_singular(self) -> None:
+        """Regression: */1 must produce 'every 1 month', not 'every 1 months'."""
+        result = describe("0 0 1 */1 *")
+        assert "every 1 month" in result
+        assert "every 1 months" not in result
 
 
 class TestMinuteRangeDescriptions:
@@ -139,6 +231,20 @@ class TestReturnType:
         assert len(result) > 0
 
 
+class TestHourRangeDescriptions:
+    def test_every_hour_between(self) -> None:
+        assert describe("0 9-17 * * *") == "Every hour between 9:00 AM and 5:00 PM"
+
+    def test_every_hour_between_on_weekdays(self) -> None:
+        assert describe("0 9-17 * * 1-5") == "Every hour between 9:00 AM and 5:00 PM on weekdays"
+
+    def test_every_hour_between_pm_range(self) -> None:
+        assert describe("0 13-18 * * *") == "Every hour between 1:00 PM and 6:00 PM"
+
+    def test_every_hour_at_30_between(self) -> None:
+        assert describe("30 9-17 * * *") == "Every hour at :30 between 9:00 AM and 5:00 PM"
+
+
 class TestUncoveredDescriberBranches:
     def test_specific_minute_wildcard_hour(self) -> None:
         """Minute is specific but hour is wildcard → 'At :MM past every hour'."""
@@ -151,10 +257,18 @@ class TestUncoveredDescriberBranches:
         assert "9" in result
 
     def test_minute_interval_specific_hour(self) -> None:
-        """Minute interval combined with a single non-range hour → fallback in _describe_hour_constraint."""
+        """Minute interval combined with a single non-range hour → formats as clock time."""
         result = describe("*/30 3 * * *")
-        assert "30" in result
-        assert "3" in result
+        assert "Every 30 minutes at 3:00 AM" == result
+
+    def test_minute_interval_afternoon_hour(self) -> None:
+        """Minute interval in a PM hour is formatted correctly."""
+        assert describe("*/15 15 * * *") == "Every 15 minutes at 3:00 PM"
+
+    def test_minute_interval_specific_hour_with_dow(self) -> None:
+        """Bug regression: */15 15 * * 3 was described as 'in hour 15'."""
+        result = describe("*/15 15 * * 3")
+        assert result == "Every 15 minutes at 3:00 PM every Wednesday"
 
     def test_dom_multiple_excluded_days(self) -> None:
         """dom with comma-separated ranges where multiple days are excluded → 'on days ... of the month'."""
@@ -190,3 +304,68 @@ class TestUncoveredDescriberBranches:
         assert "Monday" in result
         assert "Wednesday" in result
         assert "Friday" in result
+
+    def test_step_based_hour_fallback(self) -> None:
+        """Minute interval with a step-based hour like '0/2' → 'in hour X' fallback."""
+        # "0/2" is valid cron (start at 0, step by 2) but _parse_field_list returns
+        # None for it, so _describe_hour_constraint falls back to "in hour 0/2".
+        result = describe("*/15 0/2 * * *")
+        assert "Every 15 minutes" in result
+        assert "in hour 0/2" in result
+
+    def test_deduped_single_hour_in_comma_field(self) -> None:
+        """Hour '5,5' deduplicates to [5] → _describe_hour_constraint must not
+        call _oxford_join with a 1-element list (would produce ', and 5:00 AM')."""
+        result = describe("*/15 5,5 * * *")
+        assert result == "Every 15 minutes at 5:00 AM"
+
+    def test_deduped_single_dom_in_comma_field(self) -> None:
+        """DOM '1,1' deduplicates to [1] → single-item comma-DOM path."""
+        result = describe("0 0 1,1 * *")
+        assert "1st" in result
+
+    def test_dom_mixed_range_and_bare_number(self) -> None:
+        """DOM field mixing a range and a bare number (e.g. '1-12,14') exercises the
+        else-branch of the range parser and the multi-excluded-day fallback."""
+        result = describe("0 0 1-12,14 * *")
+        assert "days" in result.lower()
+        assert "month" in result.lower()
+
+    def test_dom_single_excluded_day(self) -> None:
+        """DOM that excludes exactly one day → 'except the Nth of the month'."""
+        result = describe("0 0 1-12,14-31 * *")
+        assert "13th" in result
+        assert "except" in result
+
+    def test_ordinal_dom_range_with_multiple_dow(self) -> None:
+        """7-day DOM range with multiple DOW values → doesn't describe as ordinal weekday."""
+        # "1-7 * 1,3" looks like an ordinal range but has 2 DOW values, so the
+        # ordinal path falls through to the generic range fallback.
+        result = describe("0 0 1-7 * 1,3")
+        assert "days" in result.lower() or "1-7" in result
+
+    def test_step_based_month_fallback(self) -> None:
+        """Month field '1/3' (start at 1, step 3) → 'in month X' fallback."""
+        # "1/3" is valid cron but doesn't match the */N pattern, so
+        # _parse_field_list returns None and the raw field is emitted.
+        result = describe("0 0 1 1/3 *")
+        assert "in month 1/3" in result
+
+
+class TestOxfordJoin:
+    """Direct unit tests for the _oxford_join helper."""
+
+    def test_two_items(self) -> None:
+        assert _oxford_join(["9:00 AM", "5:00 PM"]) == "9:00 AM and 5:00 PM"
+
+    def test_three_items(self) -> None:
+        assert _oxford_join(["a", "b", "c"]) == "a, b, and c"
+
+    def test_four_items(self) -> None:
+        assert _oxford_join(["a", "b", "c", "d"]) == "a, b, c, and d"
+
+    def test_two_weekday_names(self) -> None:
+        assert _oxford_join(["Monday", "Friday"]) == "Monday and Friday"
+
+    def test_three_month_names(self) -> None:
+        assert _oxford_join(["January", "April", "July"]) == "January, April, and July"

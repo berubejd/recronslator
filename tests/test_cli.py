@@ -62,6 +62,24 @@ class TestMainDirect:
         out = capsys.readouterr().out.strip()
         assert out == "*/15 * * * *"
 
+    def test_empty_stdin_exits_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """stdin that strips to empty string hits the 'not text' guard."""
+        with mock.patch("sys.argv", ["recronslate"]):
+            with mock.patch("sys.stdin.isatty", return_value=False):
+                with mock.patch("sys.stdin.read", return_value="   "):
+                    with pytest.raises(SystemExit) as exc:
+                        main()
+        assert exc.value.code == 1
+        assert "Error" in capsys.readouterr().err
+
+    def test_describe_invalid_exits_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """--describe with an invalid cron expression prints error and exits 1."""
+        with mock.patch("sys.argv", ["recronslate", "--describe", "0 99 * * *"]):
+            with pytest.raises(SystemExit) as exc:
+                main()
+        assert exc.value.code == 1
+        assert "Error" in capsys.readouterr().err
+
 
 # ---------------------------------------------------------------------------
 # Subprocess integration tests (verify installed entry point)

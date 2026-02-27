@@ -51,19 +51,12 @@ def describe(expression: str) -> str:
 def _build_description(
     minute: str, hour: str, dom: str, month: str, dow: str
 ) -> str:
-    parts: list[str] = []
-
-    time_part = _describe_time(minute, hour)
-    day_part = _describe_day(dom, dow)
-    month_part = _describe_month(month)
-
-    parts.append(time_part)
-    if day_part:
-        parts.append(day_part)
-    if month_part:
-        parts.append(month_part)
-
-    return " ".join(parts)
+    parts = [
+        _describe_time(minute, hour),
+        _describe_day(dom, dow),
+        _describe_month(month),
+    ]
+    return " ".join(p for p in parts if p)
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +78,25 @@ def _describe_time(minute: str, hour: str) -> str:
     m = re.fullmatch(r"\*/(\d+)", hour)
     if m:
         interval = int(m.group(1))
-        return f"Every {interval} hour{'s' if interval != 1 else ''}"
+        base = f"Every {interval} hour{'s' if interval != 1 else ''}"
+        # Include the minute offset when it is non-zero (e.g. "30 */2 * * *")
+        mn_m = re.fullmatch(r"(\d+)", minute)
+        if mn_m and int(mn_m.group(1)) != 0:
+            return f"{base} at {_fmt_minute(int(mn_m.group(1)))}"
+        return base
+
+    # Priority 2.5: specific minute with contiguous hour range → "every hour between X and Y"
+    # e.g. "0 9-17 * * *" → "Every hour between 9:00 AM and 5:00 PM"
+    # e.g. "30 9-17 * * *" → "Every hour at :30 between 9:00 AM and 5:00 PM"
+    m_hr = re.fullmatch(r"(\d+)-(\d+)", hour)
+    m_mn = re.fullmatch(r"(\d+)", minute)
+    if m_hr and m_mn:
+        start = _fmt_hour(int(m_hr.group(1)))
+        end = _fmt_hour(int(m_hr.group(2)))
+        mn = int(m_mn.group(1))
+        if mn == 0:
+            return f"Every hour between {start} and {end}"
+        return f"Every hour at {_fmt_minute(mn)} between {start} and {end}"
 
     # Priority 3: minute range (e.g. "0-14")
     m = re.fullmatch(r"(\d+)-(\d+)", minute)
@@ -102,14 +113,16 @@ def _describe_time(minute: str, hour: str) -> str:
         return "Every minute"
 
     if hours_list is None:
-        # minute is specific but hour is wildcard — unusual
-        mn = minutes_list[0] if minutes_list else 0
-        return f"At {_fmt_minute(mn)} past every hour"
+        # minute is specific but hour is wildcard
+        if not minutes_list:
+            return "At :00 past every hour"
+        if len(minutes_list) == 1:
+            return f"At {_fmt_minute(minutes_list[0])} past every hour"
+        # Multiple minute offsets (e.g. "15,30,45 * * * *")
+        formatted = [_fmt_minute(mn) for mn in minutes_list]
+        return f"At {_oxford_join(formatted)} past every hour"
 
-    # Format the time
-    time_str = _fmt_time_list(hours_list, minutes_list)
-
-    return time_str
+    return _fmt_time_list(hours_list, minutes_list)
 
 
 def _describe_hour_constraint(hour: str) -> str:
@@ -118,6 +131,18 @@ def _describe_hour_constraint(hour: str) -> str:
         start = _fmt_hour(int(m.group(1)))
         end = _fmt_hour(int(m.group(2)))
         return f"between {start} and {end}"
+    # Single numeric hour (e.g. "15" → "at 3:00 PM")
+    try:
+        return f"at {_fmt_hour(int(hour))}"
+    except ValueError:
+        pass
+    # Comma-separated hour list (e.g. "9,17" → "at 9:00 AM and 5:00 PM")
+    hours = _parse_field_list(hour)
+    if hours:
+        formatted = [_fmt_hour(h) for h in hours]
+        if len(formatted) == 1:
+            return f"at {formatted[0]}"
+        return f"at {_oxford_join(formatted)}"
     return f"in hour {hour}"
 
 
@@ -133,10 +158,7 @@ def _fmt_time_list(hours: list[int], minutes: list[int] | None) -> str:
         return _describe_single_time(h, mn)
 
     # Multiple hours
-    formatted = [_fmt_clock(h, mn) for h in sorted(hours)]
-    if len(formatted) == 2:
-        return f"At {formatted[0]} and {formatted[1]}"
-    return "At " + ", ".join(formatted[:-1]) + f", and {formatted[-1]}"
+    return f"At {_oxford_join([_fmt_clock(h, mn) for h in sorted(hours)])}"
 
 
 def _describe_single_time(hour: int, minute: int) -> str:
@@ -163,6 +185,17 @@ def _fmt_minute(minute: int) -> str:
     return f":{minute:02d}"
 
 
+def _oxford_join(items: list[str]) -> str:
+    """Join 2+ items into natural English with an Oxford comma.
+
+    _oxford_join(["a", "b"])        → "a and b"
+    _oxford_join(["a", "b", "c"])   → "a, b, and c"
+    """
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
 def _parse_field_list(field: str) -> list[int] | None:
     """Return a sorted list of concrete integer values, or None for wildcard."""
     if field == "*":
@@ -174,6 +207,8 @@ def _parse_field_list(field: str) -> list[int] | None:
             values.extend(range(int(lo), int(hi) + 1))
         elif "/" in part:
             return None  # Step pattern; caller handles separately
+        elif re.fullmatch(r"\d+L", part):
+            return None  # NL notation; caller handles separately
         else:
             values.append(int(part))
     return sorted(set(values))
@@ -184,12 +219,18 @@ def _parse_field_list(field: str) -> list[int] | None:
 # ---------------------------------------------------------------------------
 
 def _describe_day(dom: str, dow: str) -> str:
-    parts: list[str] = []
-
     dow_desc = _describe_dow(dow)
     dom_desc = _describe_dom(dom, dow)
 
     if dow_desc and dom_desc:
+        # Ordinal weekday pattern: dom_desc already embeds the day name
+        # (e.g. "on the first Monday of every month"), so dow_desc ("every Monday")
+        # would be redundant.  Only suppress when _describe_dom actually took the
+        # ordinal path — which requires both a 7-day DOM range AND a single DOW value.
+        m = re.fullmatch(r"(\d+)-(\d+)", dom)
+        dow_val = _parse_field_list(dow)
+        if m and int(m.group(2)) - int(m.group(1)) == 6 and dow_val and len(dow_val) == 1:
+            return dom_desc
         return f"{dom_desc} {dow_desc}"
     return dow_desc or dom_desc or ""
 
@@ -201,15 +242,18 @@ def _describe_dow(dow: str) -> str:
         return "on weekdays"
     if dow in ("0,6", "6,0"):
         return "on weekends"
+    # NL notation: e.g. "5L" means "last Friday of the month"
+    m = re.fullmatch(r"(\d)L", dow)
+    if m:
+        day_name = _WEEKDAY_NAMES[int(m.group(1))]
+        return f"on the last {day_name} of every month"
     days = _parse_field_list(dow)
     if days is None:
         return f"on day-of-week {dow}"
     if len(days) == 1:
         return f"every {_WEEKDAY_NAMES[days[0]]}"
     names = [_WEEKDAY_NAMES[d] for d in days]
-    if len(names) == 2:
-        return f"every {names[0]} and {names[1]}"
-    return "every " + ", ".join(names[:-1]) + f", and {names[-1]}"
+    return f"every {_oxford_join(names)}"
 
 
 def _describe_dom(dom: str, dow: str) -> str:
@@ -229,7 +273,17 @@ def _describe_dom(dom: str, dow: str) -> str:
                 day_name = _WEEKDAY_NAMES[dow_val[0]]
                 return f"on the {_ORDINAL_NAMES[nth]} {day_name} of every month"
 
-    # Exception pattern: e.g. "1-12,14-31"
+    # Explicit short day list (e.g. "1,15" → "on the 1st and 15th of every month")
+    # Detect before the general range/exception logic to produce clean output.
+    if "," in dom and "-" not in dom:
+        days = _parse_field_list(dom)
+        if days:
+            formatted = [_ordinal(d) for d in days]
+            if len(formatted) == 1:
+                return f"on the {formatted[0]} of every month"
+            return f"on the {_oxford_join(formatted)} of every month"
+
+    # Exception / range pattern (e.g. "1-12,14-31")
     if "," in dom or re.search(r"\d+-\d+", dom):
         # Try to find excluded day
         all_days: set[int] = set(range(1, 32))
@@ -278,12 +332,17 @@ def _describe_month(month: str) -> str:
         return ""
     if month == "1,4,7,10":
         return "each quarter"
+    # Step notation: */N
+    m = re.fullmatch(r"\*/(\d+)", month)
+    if m:
+        n = int(m.group(1))
+        if n == 2:
+            return "every other month"
+        return f"every {n} month{'s' if n != 1 else ''}"
     months = _parse_field_list(month)
     if months is None:
         return f"in month {month}"
     names = [_MONTH_NAMES[m] for m in months]
     if len(names) == 1:
         return f"in {names[0]}"
-    if len(names) == 2:
-        return f"in {names[0]} and {names[1]}"
-    return "in " + ", ".join(names[:-1]) + f", and {names[-1]}"
+    return f"in {_oxford_join(names)}"

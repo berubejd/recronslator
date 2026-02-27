@@ -65,3 +65,33 @@ class TestWordNumberExpansion:
         # "3rd" should remain as-is
         result = tokenize("3rd day of every month")
         assert "3rd" in result
+
+    # ------------------------------------------------------------------
+    # Compound word-numbers (previously unsupported)
+    # ------------------------------------------------------------------
+
+    def test_twenty_five_hyphen(self) -> None:
+        assert tokenize("every twenty-five minutes") == "every 25 minutes"
+
+    def test_thirty_one_hyphen(self) -> None:
+        assert tokenize("every thirty-one days") == "every 31 days"
+
+    def test_forty_two_hyphen(self) -> None:
+        assert tokenize("every forty-two minutes") == "every 42 minutes"
+
+    def test_twenty_one_space(self) -> None:
+        """Space-separated compound is also accepted."""
+        assert tokenize("every twenty one days") == "every 21 days"
+
+    def test_fifty_nine_hyphen(self) -> None:
+        assert tokenize("at fifty-nine minutes past") == "at 59 minutes past"
+
+    def test_tens_alone_unchanged(self) -> None:
+        """Tens word without a ones suffix still expands correctly."""
+        assert tokenize("every twenty minutes") == "every 20 minutes"
+
+    def test_compound_does_not_consume_non_digit_word(self) -> None:
+        """A word that follows a tens word but is not a ones digit is left alone."""
+        result = tokenize("every twenty minutes on friday")
+        assert "20" in result
+        assert "minutes" in result

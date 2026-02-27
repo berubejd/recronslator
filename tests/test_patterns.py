@@ -16,11 +16,27 @@ class TestIntervalPatterns:
         intent = p("every 15 minutes")
         assert intent.minute_interval == 15
 
+    def test_every_minute_bare(self) -> None:
+        """Bug regression: 'every minute' raised ValueError."""
+        intent = p("every minute")
+        assert intent.minute_interval == 1
+
     def test_every_30_minutes_between(self) -> None:
         intent = p("every 30 minutes between 9am and 5pm on weekdays")
         assert intent.minute_interval == 30
         assert intent.hour_range == (9, 17)
         assert intent.weekday_only is True
+
+    def test_every_20_minutes_from_to(self) -> None:
+        """Bug regression: 'from X to Y' syntax was not recognised."""
+        intent = p("every 20 minutes from 1pm to 4pm on fridays")
+        assert intent.minute_interval == 20
+        assert intent.hour_range == (13, 16)
+
+    def test_every_15_minutes_from_to_no_day(self) -> None:
+        intent = p("every 15 minutes from 9am to 5pm")
+        assert intent.minute_interval == 15
+        assert intent.hour_range == (9, 17)
 
     def test_every_2_hours(self) -> None:
         intent = p("every 2 hours")
@@ -63,6 +79,46 @@ class TestShorthandPatterns:
         intent = p("weekdays at quarter past each hour")
         assert intent.minutes == [15]
         assert intent.weekday_only is True
+
+    def test_quarter_after(self) -> None:
+        intent = p("at quarter after on weekdays")
+        assert intent.minutes == [15]
+        assert intent.weekday_only is True
+
+    def test_quarter_after_no_weekday(self) -> None:
+        intent = p("every hour at quarter after")
+        assert intent.minutes == [15]
+
+    def test_quarter_to(self) -> None:
+        intent = p("at quarter to each hour")
+        assert intent.minutes == [45]
+        assert not intent.weekday_only
+
+    def test_quarter_till_weekdays(self) -> None:
+        intent = p("at quarter till on weekdays")
+        assert intent.minutes == [45]
+        assert intent.weekday_only is True
+
+    def test_quarter_of(self) -> None:
+        intent = p("at quarter of each hour")
+        assert intent.minutes == [45]
+
+    def test_on_the_hour(self) -> None:
+        intent = p("on the hour")
+        assert intent.minutes == [0]
+
+    def test_top_of_the_hour(self) -> None:
+        intent = p("top of the hour")
+        assert intent.minutes == [0]
+
+    def test_on_the_hour_with_range(self) -> None:
+        intent = p("on the hour between 9am and 5pm")
+        assert intent.minutes == [0]
+        assert intent.hour_range == (9, 17)
+
+    def test_on_the_hour_weekdays(self) -> None:
+        intent = p("every weekday on the hour")
+        assert intent.minutes == [0]
 
 
 class TestTimeEnrichers:
