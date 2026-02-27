@@ -13,7 +13,7 @@ The registry's parse() method:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Callable
 
 from recronslator.model import ScheduleIntent
@@ -94,13 +94,13 @@ class PatternRegistry:
 
 def _merge_intent(base: ScheduleIntent, addition: ScheduleIntent) -> None:
     """Merge non-None fields from addition into base (additive enrichment)."""
-    for field_name in addition.__dataclass_fields__:
-        val = getattr(addition, field_name)
+    for f in fields(addition):
+        val = getattr(addition, f.name)
         if val is None or val is False:
             continue
-        existing = getattr(base, field_name)
+        existing = getattr(base, f.name)
         if existing is None or existing is False:
-            setattr(base, field_name, val)
+            setattr(base, f.name, val)
 
 
 # ---------------------------------------------------------------------------
@@ -195,13 +195,13 @@ def _parse_multiple_times(text: str) -> list[tuple[int, int]]:
         raw = raw.strip()
         if not raw:
             continue
-        _has_am = "am" in raw or raw.endswith("a")
-        _has_pm = "pm" in raw or raw.endswith("p")
-        if _has_am or _has_pm:
-            last_meridiem = "pm" if _has_pm else "am"
+        has_am = "am" in raw or raw.endswith("a")
+        has_pm = "pm" in raw or raw.endswith("p")
+        if has_am or has_pm:
+            last_meridiem = "pm" if has_pm else "am"
         h, mn = _parse_time_token(raw)
         # Propagate meridiem context forward when it's ambiguous
-        if not _has_am and not _has_pm and last_meridiem == "pm":
+        if not has_am and not has_pm and last_meridiem == "pm":
             if h < 12:
                 h += 12
         results.append((h, mn))
@@ -352,10 +352,7 @@ def _text_has_explicit_time(text: str) -> bool:
     if re.search(r"\d{1,2}\s*(?:am?|pm?)\b", text):
         return True
     # special time names
-    for name in SPECIAL_TIMES:
-        if re.search(r"\b" + name + r"\b", text):
-            return True
-    return False
+    return any(re.search(r"\b" + name + r"\b", text) for name in SPECIAL_TIMES)
 
 
 def _text_has_explicit_dom(text: str) -> bool:
@@ -589,8 +586,6 @@ def _e_special_time_name(text: str) -> ScheduleIntent | None:
 
 
 
-
-
 @registry.register("first_n_minutes", priority=330, composite=False)
 def _e_first_n_minutes(text: str) -> ScheduleIntent | None:
     """once per hour in the first N minutes"""
@@ -790,32 +785,10 @@ def _e_day_exception(text: str) -> ScheduleIntent | None:
     excluded = int(m.group(1))
     if not 1 <= excluded <= 31:
         raise ValueError(f"Excluded day {excluded} is out of range (1-31)")
-    # Build day_of_month list excluding the exception
-    days = [d for d in range(1, 32) if d != excluded]
-    # Format as compact ranges: "1-12,14-31" for excluding 13
-    dom_str = _days_to_dom_string(days)
-    # Store as excluded_days; compiler will handle rendering
     return ScheduleIntent(
         excluded_days_of_month=[excluded],
         weekday_only=True,
     )
-
-
-def _days_to_dom_string(days: list[int]) -> str:
-    """Convert a list of day ints to a compact range string like '1-12,14-31'."""
-    if not days:
-        return ""
-    parts: list[str] = []
-    start = days[0]
-    prev = days[0]
-    for d in days[1:]:
-        if d == prev + 1:
-            prev = d
-        else:
-            parts.append(f"{start}" if start == prev else f"{start}-{prev}")
-            start = prev = d
-    parts.append(f"{start}" if start == prev else f"{start}-{prev}")
-    return ",".join(parts)
 
 
 # ---------------------------------------------------------------------------

@@ -51,19 +51,12 @@ def describe(expression: str) -> str:
 def _build_description(
     minute: str, hour: str, dom: str, month: str, dow: str
 ) -> str:
-    parts: list[str] = []
-
-    time_part = _describe_time(minute, hour)
-    day_part = _describe_day(dom, dow)
-    month_part = _describe_month(month)
-
-    parts.append(time_part)
-    if day_part:
-        parts.append(day_part)
-    if month_part:
-        parts.append(month_part)
-
-    return " ".join(parts)
+    parts = [
+        _describe_time(minute, hour),
+        _describe_day(dom, dow),
+        _describe_month(month),
+    ]
+    return " ".join(p for p in parts if p)
 
 
 # ---------------------------------------------------------------------------
@@ -127,14 +120,9 @@ def _describe_time(minute: str, hour: str) -> str:
             return f"At {_fmt_minute(minutes_list[0])} past every hour"
         # Multiple minute offsets (e.g. "15,30,45 * * * *")
         formatted = [_fmt_minute(mn) for mn in minutes_list]
-        if len(formatted) == 2:
-            return f"At {formatted[0]} and {formatted[1]} past every hour"
-        return "At " + ", ".join(formatted[:-1]) + f", and {formatted[-1]} past every hour"
+        return f"At {_oxford_join(formatted)} past every hour"
 
-    # Format the time
-    time_str = _fmt_time_list(hours_list, minutes_list)
-
-    return time_str
+    return _fmt_time_list(hours_list, minutes_list)
 
 
 def _describe_hour_constraint(hour: str) -> str:
@@ -151,10 +139,7 @@ def _describe_hour_constraint(hour: str) -> str:
     # Comma-separated hour list (e.g. "9,17" → "at 9:00 AM and 5:00 PM")
     hours = _parse_field_list(hour)
     if hours:
-        formatted = [_fmt_hour(h) for h in hours]
-        if len(formatted) == 2:
-            return f"at {formatted[0]} and {formatted[1]}"
-        return "at " + ", ".join(formatted[:-1]) + f", and {formatted[-1]}"
+        return f"at {_oxford_join([_fmt_hour(h) for h in hours])}"
     return f"in hour {hour}"
 
 
@@ -170,10 +155,7 @@ def _fmt_time_list(hours: list[int], minutes: list[int] | None) -> str:
         return _describe_single_time(h, mn)
 
     # Multiple hours
-    formatted = [_fmt_clock(h, mn) for h in sorted(hours)]
-    if len(formatted) == 2:
-        return f"At {formatted[0]} and {formatted[1]}"
-    return "At " + ", ".join(formatted[:-1]) + f", and {formatted[-1]}"
+    return f"At {_oxford_join([_fmt_clock(h, mn) for h in sorted(hours)])}"
 
 
 def _describe_single_time(hour: int, minute: int) -> str:
@@ -198,6 +180,17 @@ def _fmt_hour(hour: int) -> str:
 
 def _fmt_minute(minute: int) -> str:
     return f":{minute:02d}"
+
+
+def _oxford_join(items: list[str]) -> str:
+    """Join 2+ items into natural English with an Oxford comma.
+
+    _oxford_join(["a", "b"])        → "a and b"
+    _oxford_join(["a", "b", "c"])   → "a, b, and c"
+    """
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
 
 
 def _parse_field_list(field: str) -> list[int] | None:
@@ -253,9 +246,7 @@ def _describe_dow(dow: str) -> str:
     if len(days) == 1:
         return f"every {_WEEKDAY_NAMES[days[0]]}"
     names = [_WEEKDAY_NAMES[d] for d in days]
-    if len(names) == 2:
-        return f"every {names[0]} and {names[1]}"
-    return "every " + ", ".join(names[:-1]) + f", and {names[-1]}"
+    return f"every {_oxford_join(names)}"
 
 
 def _describe_dom(dom: str, dow: str) -> str:
@@ -283,9 +274,7 @@ def _describe_dom(dom: str, dow: str) -> str:
             formatted = [_ordinal(d) for d in days]
             if len(formatted) == 1:
                 return f"on the {formatted[0]} of every month"
-            if len(formatted) == 2:
-                return f"on the {formatted[0]} and {formatted[1]} of every month"
-            return "on the " + ", ".join(formatted[:-1]) + f", and {formatted[-1]} of every month"
+            return f"on the {_oxford_join(formatted)} of every month"
 
     # Exception / range pattern (e.g. "1-12,14-31")
     if "," in dom or re.search(r"\d+-\d+", dom):
@@ -349,6 +338,4 @@ def _describe_month(month: str) -> str:
     names = [_MONTH_NAMES[m] for m in months]
     if len(names) == 1:
         return f"in {names[0]}"
-    if len(names) == 2:
-        return f"in {names[0]} and {names[1]}"
-    return "in " + ", ".join(names[:-1]) + f", and {names[-1]}"
+    return f"in {_oxford_join(names)}"

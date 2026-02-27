@@ -2,7 +2,7 @@
 
 import pytest
 
-from recronslator.describer import describe
+from recronslator.describer import _oxford_join, describe
 
 
 class TestIntervalDescriptions:
@@ -262,3 +262,62 @@ class TestUncoveredDescriberBranches:
         assert "Monday" in result
         assert "Wednesday" in result
         assert "Friday" in result
+
+    def test_step_based_hour_fallback(self) -> None:
+        """Minute interval with a step-based hour like '0/2' → 'in hour X' fallback."""
+        # "0/2" is valid cron (start at 0, step by 2) but _parse_field_list returns
+        # None for it, so _describe_hour_constraint falls back to "in hour 0/2".
+        result = describe("*/15 0/2 * * *")
+        assert "Every 15 minutes" in result
+        assert "in hour 0/2" in result
+
+    def test_deduped_single_dom_in_comma_field(self) -> None:
+        """DOM '1,1' deduplicates to [1] → single-item comma-DOM path."""
+        result = describe("0 0 1,1 * *")
+        assert "1st" in result
+
+    def test_dom_mixed_range_and_bare_number(self) -> None:
+        """DOM field mixing a range and a bare number (e.g. '1-12,14') exercises the
+        else-branch of the range parser and the multi-excluded-day fallback."""
+        result = describe("0 0 1-12,14 * *")
+        assert "days" in result.lower()
+        assert "month" in result.lower()
+
+    def test_dom_single_excluded_day(self) -> None:
+        """DOM that excludes exactly one day → 'except the Nth of the month'."""
+        result = describe("0 0 1-12,14-31 * *")
+        assert "13th" in result
+        assert "except" in result
+
+    def test_ordinal_dom_range_with_multiple_dow(self) -> None:
+        """7-day DOM range with multiple DOW values → doesn't describe as ordinal weekday."""
+        # "1-7 * 1,3" looks like an ordinal range but has 2 DOW values, so the
+        # ordinal path falls through to the generic range fallback.
+        result = describe("0 0 1-7 * 1,3")
+        assert "days" in result.lower() or "1-7" in result
+
+    def test_step_based_month_fallback(self) -> None:
+        """Month field '1/3' (start at 1, step 3) → 'in month X' fallback."""
+        # "1/3" is valid cron but doesn't match the */N pattern, so
+        # _parse_field_list returns None and the raw field is emitted.
+        result = describe("0 0 1 1/3 *")
+        assert "in month 1/3" in result
+
+
+class TestOxfordJoin:
+    """Direct unit tests for the _oxford_join helper."""
+
+    def test_two_items(self) -> None:
+        assert _oxford_join(["9:00 AM", "5:00 PM"]) == "9:00 AM and 5:00 PM"
+
+    def test_three_items(self) -> None:
+        assert _oxford_join(["a", "b", "c"]) == "a, b, and c"
+
+    def test_four_items(self) -> None:
+        assert _oxford_join(["a", "b", "c", "d"]) == "a, b, c, and d"
+
+    def test_two_weekday_names(self) -> None:
+        assert _oxford_join(["Monday", "Friday"]) == "Monday and Friday"
+
+    def test_three_month_names(self) -> None:
+        assert _oxford_join(["January", "April", "July"]) == "January, April, and July"

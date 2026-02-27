@@ -3,6 +3,8 @@
 Ported and extended from the original pyslop/cronslator project.
 """
 
+from __future__ import annotations
+
 WEEKDAYS: dict[str, int] = {
     "sunday": 0,
     "monday": 1,
@@ -70,6 +72,7 @@ MONTH_NAMES: dict[str, int] = {
     "feb": 2,
     "mar": 3,
     "apr": 4,
+    # "may" is intentionally absent — it conflicts with the common English word
     "jun": 6,
     "jul": 7,
     "aug": 8,
