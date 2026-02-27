@@ -213,14 +213,25 @@ def _parse_multiple_times(text: str) -> list[tuple[int, int]]:
 # Priority 100 — Interval patterns (composite)
 # ---------------------------------------------------------------------------
 
+@registry.register("every_minute_ranged", priority=98)
+def _p_every_minute_ranged(text: str) -> ScheduleIntent | None:
+    """every minute between Xam and Ypm / from Xam to Ypm [on weekdays]"""
+    if not re.search(r"\bevery\s+minute\b", text):
+        return None
+    if "between" not in text and not re.search(r"\bfrom\s+\d", text):
+        return None
+    hr = _parse_time_range(text)
+    if hr is None:
+        return None
+    weekday_only = bool(re.search(r"\bweekdays?\b", text))
+    return ScheduleIntent(minute_interval=1, hour_range=hr, weekday_only=weekday_only)
+
+
 @registry.register("every_minute", priority=99)
 def _p_every_minute(text: str) -> ScheduleIntent | None:
     """every minute (no explicit number, no time range)"""
     if not re.search(r"\bevery\s+minute\b", text):
         return None
-    # Time-ranged forms ("every minute between X and Y") are not expressible as
-    # a simple minute_interval=1 — no additive enricher recovers hour_range.
-    # Defer these so they raise ValueError rather than silently drop the constraint.
     if "between" in text or re.search(r"\bfrom\s+\d", text):
         return None
     if "business hours" in text:

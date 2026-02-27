@@ -59,17 +59,17 @@ class TestIntervals:
     def test_interval_short_meridiem_between_and(self) -> None:
         assert cronslate("every 30 minutes between 9a and 5p on weekdays") == "*/30 9-17 * * 1-5"
 
-    def test_every_minute_with_between_range_raises(self) -> None:
-        """Bug regression: 'every minute between X and Y' silently produced '* * * * *'
-        by matching _p_every_minute (priority 99) before _p_minute_interval_ranged,
-        dropping the hour range entirely."""
-        with pytest.raises(ValueError):
-            cronslate("every minute between 9am and 5pm")
+    def test_every_minute_with_between_range(self) -> None:
+        """'every minute between X and Y' should produce a ranged cron, not drop the constraint."""
+        assert cronslate("every minute between 9am and 5pm") == "* 9-17 * * *"
 
-    def test_every_minute_with_from_to_range_raises(self) -> None:
-        """Same silent-drop bug via 'from X to Y' phrasing."""
-        with pytest.raises(ValueError):
-            cronslate("every minute from 9am to 5pm")
+    def test_every_minute_with_from_to_range(self) -> None:
+        """'every minute from X to Y' should produce a ranged cron via 'from X to Y' phrasing."""
+        assert cronslate("every minute from 9am to 5pm") == "* 9-17 * * *"
+
+    def test_every_minute_ranged_short_meridiem_with_dow(self) -> None:
+        """Regression: short meridiem + DOW was silently producing '0 0 * * 3'."""
+        assert cronslate("every minute from 9a to 5p on Wednesdays") == "* 9-17 * * 3"
 
     def test_every_minute_on_weekdays_still_works(self) -> None:
         """Weekday constraint is additive and recoverable; must still be accepted."""
