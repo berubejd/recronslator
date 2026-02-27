@@ -85,7 +85,8 @@ def _describe_time(minute: str, hour: str) -> str:
     if m:
         interval = int(m.group(1))
         base = f"Every {interval} hour{'s' if interval != 1 else ''}"
-        # Include the minute offset when it is non-zero (e.g. "30 */2 * * *")
+        if minute == "*":
+            return f"Every minute {base.lower()}"
         mn_m = re.fullmatch(r"(\d+)", minute)
         if mn_m and int(mn_m.group(1)) != 0:
             return f"{base} at {_fmt_minute(int(mn_m.group(1)))}"
@@ -106,9 +107,13 @@ def _describe_time(minute: str, hour: str) -> str:
 
     # Priority 3: minute range (e.g. "0-14")
     m = re.fullmatch(r"(\d+)-(\d+)", minute)
-    if m and hour == "*":
+    if m:
         lo, hi = int(m.group(1)), int(m.group(2))
-        return f"Once per hour in the first {hi + 1} minutes"
+        count = hi - lo + 1
+        if hour == "*":
+            return f"Once per hour in the first {count} minutes"
+        hr_desc = _describe_hour_constraint(hour)
+        return f"In the first {count} minutes {hr_desc}"
 
     # Priority 4: list patterns / specific values
     hours_list = _parse_field_list(hour)

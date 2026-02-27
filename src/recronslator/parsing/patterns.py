@@ -214,6 +214,15 @@ def _parse_multiple_times(text: str) -> list[tuple[int, int]]:
 # Priority 100 — Interval patterns (composite)
 # ---------------------------------------------------------------------------
 
+@registry.register("every_minute_hour_interval", priority=97)
+def _p_every_minute_hour_interval(text: str) -> ScheduleIntent | None:
+    """every minute every N hours"""
+    m = re.search(r"every\s+minute\s+every\s+(\d+)\s+hours?", text)
+    if not m:
+        return None
+    return ScheduleIntent(minute_interval=1, hour_interval=int(m.group(1)))
+
+
 @registry.register("every_minute_ranged", priority=98)
 def _p_every_minute_ranged(text: str) -> ScheduleIntent | None:
     """every minute between Xam and Ypm / from Xam to Ypm [on weekdays]"""
@@ -236,6 +245,8 @@ def _p_every_minute(text: str) -> ScheduleIntent | None:
     if "between" in text or re.search(r"\bfrom\s+\d", text):
         return None
     if "business hours" in text:
+        return None
+    if re.search(r"every\s+\d+\s+hours?", text):
         return None
     return ScheduleIntent(minute_interval=1)
 
@@ -291,6 +302,18 @@ def _p_hour_interval(text: str) -> ScheduleIntent | None:
     return ScheduleIntent(hour_interval=interval)
 
 
+@registry.register("hour_interval_enricher", priority=115, composite=False)
+def _e_hour_interval(text: str) -> ScheduleIntent | None:
+    """every N hours — enricher version to layer onto minute-interval composites"""
+    m = re.search(r"every\s+(\d+)\s+hours?", text)
+    if not m:
+        return None
+    interval = int(m.group(1))
+    if interval <= 1 or interval > 23:
+        return None
+    return ScheduleIntent(hour_interval=interval)
+
+
 @registry.register("business_hours_interval", priority=120)
 def _p_business_hours_interval(text: str) -> ScheduleIntent | None:
     """every N minutes during business hours"""
@@ -329,13 +352,16 @@ def _p_hourly_ranged(text: str) -> ScheduleIntent | None:
 
 @registry.register("colon_past_every_hour", priority=199)
 def _p_colon_past_every_hour(text: str) -> ScheduleIntent | None:
-    """at :NN past every hour [on weekdays] — e.g. 'at :30 past every hour'"""
-    m = re.search(r":(\d{2})\s+past\b", text)
-    if not m:
+    """at :NN[, :NN, and :NN] past every hour [on weekdays]"""
+    if "past" not in text:
         return None
-    mn = int(m.group(1))
+    before_past = text.split("past")[0]
+    tokens = re.findall(r":(\d{2})", before_past)
+    if not tokens:
+        return None
+    minutes = sorted(int(t) for t in tokens)
     weekday_only = bool(re.search(r"\bweekdays?\b", text))
-    return ScheduleIntent(minutes=[mn], weekday_only=weekday_only)
+    return ScheduleIntent(minutes=minutes, weekday_only=weekday_only)
 
 
 @registry.register("shorthand_hourly", priority=200)
@@ -519,10 +545,12 @@ def _e_colon_times_list(text: str) -> ScheduleIntent | None:
     times = [_parse_time_token(p.strip()) for p in parts if p.strip()]
     if len(times) < 2:
         return None
-    hours = sorted({h for h, _ in times})
-    minutes_set = {mn for _, mn in times}
-    mn = list(minutes_set)[0] if len(minutes_set) == 1 else 0
-    return ScheduleIntent(minutes=[mn], hours=hours)
+    unique_hours = sorted({h for h, _ in times})
+    unique_minutes = sorted({mn for _, mn in times})
+    if len(unique_hours) == 1 and len(unique_minutes) > 1:
+        return ScheduleIntent(minutes=unique_minutes, hours=unique_hours)
+    mn = unique_minutes[0] if len(unique_minutes) == 1 else 0
+    return ScheduleIntent(minutes=[mn], hours=unique_hours)
 
 
 @registry.register("specific_time_with_minutes", priority=301, composite=False)
@@ -637,6 +665,14 @@ def _e_special_time_name(text: str) -> ScheduleIntent | None:
     return None
 
 
+@registry.register("colon_minute_offset", priority=305, composite=False)
+def _e_colon_minute_offset(text: str) -> ScheduleIntent | None:
+    """at :NN — bare colon-minute offset (e.g. 'every 2 hours at :30')"""
+    m = re.search(r"\bat\s+:(\d{2})\b", text)
+    if not m:
+        return None
+    return ScheduleIntent(minutes=[int(m.group(1))])
+
 
 
 @registry.register("first_n_minutes", priority=330, composite=False)
@@ -647,6 +683,15 @@ def _e_first_n_minutes(text: str) -> ScheduleIntent | None:
         return None
     n = int(m.group(1)) - 1  # "first 15 minutes" → 0-14
     return ScheduleIntent(minute_range=(0, n))
+
+
+@registry.register("time_range_enricher", priority=335, composite=False)
+def _e_time_range(text: str) -> ScheduleIntent | None:
+    """between Xam and Ypm / from Xam to Ypm — enricher for hour ranges"""
+    hr = _parse_time_range(text)
+    if hr is None:
+        return None
+    return ScheduleIntent(hour_range=hr)
 
 
 # ---------------------------------------------------------------------------
@@ -805,6 +850,16 @@ def _e_day_interval(text: str) -> ScheduleIntent | None:
     return None
 
 
+@registry.register("dom_range", priority=535, composite=False)
+def _e_dom_range(text: str) -> ScheduleIntent | None:
+    """on days N-M of the month"""
+    m = re.search(r"\bon\s+days\s+(\d{1,2})-(\d{1,2})\b", text)
+    if not m:
+        return None
+    lo, hi = int(m.group(1)), int(m.group(2))
+    return ScheduleIntent(days_of_month=list(range(lo, hi + 1)))
+
+
 @registry.register("first_day", priority=540, composite=False)
 def _e_first_day(text: str) -> ScheduleIntent | None:
     """first day of every month / on the first"""
@@ -838,9 +893,10 @@ def _e_day_exception(text: str) -> ScheduleIntent | None:
     excluded = int(m.group(1))
     if not 1 <= excluded <= 31:
         raise ValueError(f"Excluded day {excluded} is out of range (1-31)")
+    weekday_only = bool(re.search(r"\b(?:weekdays?|workdays?)\b", text))
     return ScheduleIntent(
         excluded_days_of_month=[excluded],
-        weekday_only=True,
+        weekday_only=weekday_only,
     )
 
 

@@ -85,36 +85,14 @@ _valid_cron_strategy = st.builds(
     _cron_field(_VALID_DOWS),
 )
 
-# Narrower strategies for idempotency tests.  Two known parser limitations
-# are excluded to prevent the property test from hitting pre-documented gaps:
-#
-#  1. DOM ranges ("1-7", "1-12,14-31") — describe emits "on days N-M of the
-#     month" but no enricher can recover that on re-parse.
-#
-#  2. Step-hours ("*/2", "*/3", ...) with non-zero minutes — describe emits
-#     "Every 2 hours at :30" but the parser has no "every N hours at :M"
-#     composite, so the offset is silently dropped.  (Layer 3 test
-#     test_step_hour_with_nonzero_minute documents this.)  Using minute=0
-#     with step-hours IS stable, so we keep step-hours only when minute
-#     is implicitly 0 via the whole-strategy wildcard path.
-_VALID_DOMS_ROUNDTRIP = [str(i) for i in range(1, 32)] + ["*/4", "L"]
-_VALID_HOURS_ROUNDTRIP = (
-    [str(i) for i in range(0, 24)] + ["9-17", "8-18", "0,12", "9,13,17"]
-)
-# Minute ranges ("0-14") only describe correctly when hour="*"; with a specific
-# hour the describer expands all values individually and the re-parse drops most
-# of them.  The "0-14 * * * *" case is already exercised in Layer 2 stable tests
-# and in the full _valid_cron_strategy (which only checks no-crash/no-leak).
-_VALID_MINUTES_ROUNDTRIP = (
-    [str(i) for i in range(0, 60)] + ["*/5", "*/10", "*/15", "*/30"]
-    # "15,30,45" (multi-minute list) excluded: "At :15, :30, and :45 past every hour"
-    # re-parses to only the last value; no multi-minute enricher exists yet.
-)
+# Idempotency strategy now uses the same field sets as the main strategy.
+# All previously-excluded categories (DOM ranges, step-hours, minute ranges,
+# multi-minute lists) are now stable thanks to Phases 1-3 fixes.
 _roundtrip_cron_strategy = st.builds(
     lambda m, h, dom, mon, dow: f"{m} {h} {dom} {mon} {dow}",
-    _cron_field(_VALID_MINUTES_ROUNDTRIP),
-    _cron_field(_VALID_HOURS_ROUNDTRIP),
-    _cron_field(_VALID_DOMS_ROUNDTRIP),
+    _cron_field(_VALID_MINUTES),
+    _cron_field(_VALID_HOURS),
+    _cron_field(_VALID_DOMS),
     _cron_field(_VALID_MONTHS),
     _cron_field(_VALID_DOWS),
 )

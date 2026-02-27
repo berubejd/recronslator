@@ -35,14 +35,12 @@ class TestIntervalDescriptions:
     def test_every_2_hours_at_zero_unchanged(self) -> None:
         assert describe("0 */2 * * *") == "Every 2 hours"
 
-    def test_every_n_hours_wildcard_minute_not_intercepted(self) -> None:
-        """Regression: Priority 0 'Every minute ...' must not intercept step-hour patterns.
-
-        '* */2 * * *' should describe as 'Every 2 hours', not 'Every minute in hour */2'.
-        """
-        assert describe("* */2 * * *") == "Every 2 hours"
-        assert describe("* */3 * * *") == "Every 3 hours"
-        assert describe("* */4 * * *") == "Every 4 hours"
+    def test_wildcard_minute_step_hour_distinguished(self) -> None:
+        """'* */N * * *' must say 'Every minute every N hours', not 'Every N hours'
+        (which is '0 */N * * *'). The original regression was 'Every minute in hour */2'."""
+        assert describe("* */2 * * *") == "Every minute every 2 hours"
+        assert describe("* */3 * * *") == "Every minute every 3 hours"
+        assert describe("* */4 * * *") == "Every minute every 4 hours"
 
     def test_step_minute_with_hour_list(self) -> None:
         assert describe("*/15 9,17 * * *") == "Every 15 minutes at 9:00 AM and 5:00 PM"
@@ -376,14 +374,14 @@ class TestMinuteHourMatrix:
     @pytest.mark.parametrize("minute,hour,expected_fragment", [
         # minute=* (wildcard) — Priority 0 / Priority 2 interaction
         ("*",    "*",     "Every minute"),
-        ("*",    "*/2",   "Every 2 hours"),      # step-hour must NOT be intercepted
-        ("*",    "*/3",   "Every 3 hours"),
+        ("*",    "*/2",   "Every minute every 2 hours"),
+        ("*",    "*/3",   "Every minute every 3 hours"),
         ("*",    "9",     "Every minute at"),
         ("*",    "9-17",  "Every minute between"),
         ("*",    "9,17",  "Every minute at"),
         # minute=*/N (step) — Priority 1
         ("*/15", "*",     "Every 15 minutes"),
-        ("*/15", "*/2",   "Every 15 minutes"),   # step-minute + step-hour
+        ("*/15", "*/2",   "Every 15 minutes every 2 hours"),
         ("*/30", "9-17",  "Every 30 minutes"),
         ("*/30", "9",     "Every 30 minutes at"),
         ("*/30", "9,17",  "Every 30 minutes at"),
@@ -395,8 +393,10 @@ class TestMinuteHourMatrix:
         ("30",   "*/2",   "Every 2 hours at :30"),
         # minute=range
         ("0-14", "*",     "first 15 minutes"),
+        ("0-14", "9",     "first 15 minutes at 9:00 AM"),
         # minute=list
         ("15,30,45", "*", ":15"),
+        ("15,30,45", "9", "9:15 AM"),
     ])
     def test_time_field_combination(
         self, minute: str, hour: str, expected_fragment: str

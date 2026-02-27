@@ -291,6 +291,17 @@ def test_forward_and_describe_keywords(
         "* 9-17 * * *",        # every minute with hour range
         "* 9-17 * * 3",        # every minute with hour range + specific dow
         "* 9-17 * * 1-5",      # every minute with hour range on weekdays
+        # Phase 1-3 fixes (all previously Layer 3 / broken)
+        "30 */2 * * *",        # step-hour + nonzero minute (RC2)
+        "15 */3 * * *",        # step-hour + nonzero minute (RC2)
+        "45 8 1-12,14-31 * *", # exception day without weekday (RC6)
+        "* */2 * * *",         # wildcard minute + step-hour (RC3)
+        "* */3 * * 1-5",       # wildcard minute + step-hour + weekday (RC3)
+        "0 6 1-5 1,4,7,10 *",  # DOM range + quarter (RC1)
+        "0 0 1-7 * *",         # DOM range simple (RC1)
+        "15,30,45 * * * *",    # multi-minute list (RC5)
+        "15,30,45 9 * * *",    # multi-minute list + specific hour (RC5)
+        "0-14 9 * * *",        # minute range + specific hour (RC4)
     ],
 )
 def test_cron_to_english_to_cron_stable(cron: str) -> None:
@@ -305,40 +316,4 @@ def test_cron_to_english_to_cron_stable(cron: str) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Layer 3 — Known limitations (descriptions are correct but not re-parseable)
-# ---------------------------------------------------------------------------
-
-class TestKnownLimitations:
-    """These cron expressions produce correct descriptions but cannot round-trip
-    back to the same cron.  Tests assert the *current* (imperfect) re-parse
-    result so any regression is immediately visible.
-
-    Root causes are documented inline.
-    """
-
-    def test_first_n_days_of_quarter(self) -> None:
-        # '0 6 1-5 1,4,7,10 *' → 'At 6:00 AM on days 1-5 of the month each quarter'
-        # "on days 1-5" is not a recognised parser phrase; only the quarter
-        # months are recovered.
-        english = recronslator.describe("0 6 1-5 1,4,7,10 *")
-        assert "6:00 AM" in english and "quarter" in english.lower()
-        assert cronslate(english) == "0 6 * 1,4,7,10 *"  # loses dom range
-
-    def test_step_hour_with_nonzero_minute(self) -> None:
-        # '30 */2 * * *' → 'Every 2 hours at :30'
-        # The bare ':NN' minute syntax in the description has no enricher that
-        # can recover it; the hour interval fires first and minute defaults to 0.
-        english = recronslator.describe("30 */2 * * *")
-        assert "2" in english and ":30" in english
-        assert cronslate(english) == "0 */2 * * *"  # loses the :30 offset
-
-    def test_wildcard_minute_with_step_hour(self) -> None:
-        # '* */2 * * *' → 'Every 2 hours' (describe conflates with '0 */2 * * *').
-        # The wildcard minute means "every minute of every 2nd hour" which is
-        # semantically different from "once every 2 hours", but there is no
-        # natural-language phrase that round-trips to '* */2 * * *'.
-        english = recronslator.describe("* */2 * * *")
-        assert "2" in english and "hour" in english.lower()
-        assert cronslate(english) == "0 */2 * * *"  # minute wildcard lost
 

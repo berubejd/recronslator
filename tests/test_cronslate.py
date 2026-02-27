@@ -33,6 +33,15 @@ class TestIntervals:
     def test_every_2_hours(self) -> None:
         assert cronslate("every 2 hours") == "0 */2 * * *"
 
+    def test_every_2_hours_at_30(self) -> None:
+        assert cronslate("every 2 hours at :30") == "30 */2 * * *"
+
+    def test_every_minute_every_2_hours(self) -> None:
+        assert cronslate("every minute every 2 hours") == "* */2 * * *"
+
+    def test_every_minute_every_3_hours_on_weekdays(self) -> None:
+        assert cronslate("every minute every 3 hours on weekdays") == "* */3 * * 1-5"
+
     def test_every_hour(self) -> None:
         assert cronslate("every hour") == "0 * * * *"
 
@@ -200,6 +209,24 @@ class TestSpecificTimes:
 
     def test_three_times_per_hour(self) -> None:
         assert cronslate("three times per hour at 15, 30, and 45 minutes") == "15,30,45 * * * *"
+
+    def test_multi_colon_minutes_past_every_hour(self) -> None:
+        assert cronslate("at :15, :30, and :45 past every hour") == "15,30,45 * * * *"
+
+    def test_colon_times_same_hour_different_minutes(self) -> None:
+        assert cronslate("at 9:15 AM, 9:30 AM, 9:45 AM") == "15,30,45 9 * * *"
+
+    def test_dom_range_on_days(self) -> None:
+        assert cronslate("at midnight on days 1-7 of the month") == "0 0 1-7 * *"
+
+    def test_dom_range_with_quarter(self) -> None:
+        assert cronslate("at 6:00 am on days 1-5 of the month each quarter") == "0 6 1-5 1,4,7,10 *"
+
+    def test_minute_range_at_specific_hour(self) -> None:
+        assert cronslate("in the first 15 minutes at 9:00 am") == "0-14 9 * * *"
+
+    def test_except_day_without_weekday(self) -> None:
+        assert cronslate("at 8:45 am except the 13th of the month") == "45 8 1-12,14-31 * *"
 
 
 class TestDayOfWeek:
