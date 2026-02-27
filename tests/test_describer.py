@@ -24,6 +24,56 @@ class TestIntervalDescriptions:
     def test_every_2_hours(self) -> None:
         assert describe("0 */2 * * *") == "Every 2 hours"
 
+    def test_every_2_hours_at_half_past(self) -> None:
+        assert describe("30 */2 * * *") == "Every 2 hours at :30"
+
+    def test_every_3_hours_at_15(self) -> None:
+        assert describe("15 */3 * * *") == "Every 3 hours at :15"
+
+    def test_every_2_hours_at_zero_unchanged(self) -> None:
+        assert describe("0 */2 * * *") == "Every 2 hours"
+
+    def test_step_minute_with_hour_list(self) -> None:
+        assert describe("*/15 9,17 * * *") == "Every 15 minutes at 9:00 AM and 5:00 PM"
+
+    def test_step_minute_with_three_hour_list(self) -> None:
+        result = describe("*/30 9,12,17 * * *")
+        assert "9:00 AM" in result and "12:00 PM" in result and "5:00 PM" in result
+
+
+class TestDomDescriptions:
+    def test_day_list_two(self) -> None:
+        assert describe("0 0 1,15 * *") == "At midnight on the 1st and 15th of every month"
+
+    def test_day_list_three(self) -> None:
+        result = describe("0 0 1,8,15 * *")
+        assert "1st" in result and "8th" in result and "15th" in result
+
+
+class TestMonthDescriptions:
+    def test_month_step_3(self) -> None:
+        result = describe("0 0 1 */3 *")
+        assert "every 3 months" in result
+
+    def test_month_step_2(self) -> None:
+        result = describe("0 0 1 */2 *")
+        assert "every other month" in result
+
+
+class TestLastWeekdayDescriptions:
+    def test_last_friday(self) -> None:
+        result = describe("0 9 * * 5L")
+        assert "last Friday" in result
+        assert "9:00 AM" in result
+
+    def test_last_monday(self) -> None:
+        result = describe("0 0 * * 1L")
+        assert "last Monday" in result
+
+    def test_last_sunday(self) -> None:
+        result = describe("0 12 * * 0L")
+        assert "last Sunday" in result
+
 
 class TestSpecificTimeDescriptions:
     def test_monday_3am(self) -> None:
@@ -139,6 +189,20 @@ class TestReturnType:
         assert len(result) > 0
 
 
+class TestHourRangeDescriptions:
+    def test_every_hour_between(self) -> None:
+        assert describe("0 9-17 * * *") == "Every hour between 9:00 AM and 5:00 PM"
+
+    def test_every_hour_between_on_weekdays(self) -> None:
+        assert describe("0 9-17 * * 1-5") == "Every hour between 9:00 AM and 5:00 PM on weekdays"
+
+    def test_every_hour_between_pm_range(self) -> None:
+        assert describe("0 13-18 * * *") == "Every hour between 1:00 PM and 6:00 PM"
+
+    def test_every_hour_at_30_between(self) -> None:
+        assert describe("30 9-17 * * *") == "Every hour at :30 between 9:00 AM and 5:00 PM"
+
+
 class TestUncoveredDescriberBranches:
     def test_specific_minute_wildcard_hour(self) -> None:
         """Minute is specific but hour is wildcard → 'At :MM past every hour'."""
@@ -151,10 +215,18 @@ class TestUncoveredDescriberBranches:
         assert "9" in result
 
     def test_minute_interval_specific_hour(self) -> None:
-        """Minute interval combined with a single non-range hour → fallback in _describe_hour_constraint."""
+        """Minute interval combined with a single non-range hour → formats as clock time."""
         result = describe("*/30 3 * * *")
-        assert "30" in result
-        assert "3" in result
+        assert "Every 30 minutes at 3:00 AM" == result
+
+    def test_minute_interval_afternoon_hour(self) -> None:
+        """Minute interval in a PM hour is formatted correctly."""
+        assert describe("*/15 15 * * *") == "Every 15 minutes at 3:00 PM"
+
+    def test_minute_interval_specific_hour_with_dow(self) -> None:
+        """Bug regression: */15 15 * * 3 was described as 'in hour 15'."""
+        result = describe("*/15 15 * * 3")
+        assert result == "Every 15 minutes at 3:00 PM every Wednesday"
 
     def test_dom_multiple_excluded_days(self) -> None:
         """dom with comma-separated ranges where multiple days are excluded → 'on days ... of the month'."""

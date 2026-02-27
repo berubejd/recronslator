@@ -205,3 +205,130 @@ class TestValidateIntentAdditionalBranches:
     def test_hour_interval_zero(self) -> None:
         with pytest.raises(ValueError, match="out of range"):
             validate_intent(ScheduleIntent(hour_interval=0))
+
+
+class TestCronExpressionValidateMethod:
+    """CronExpression.validate() is a convenience method on the dataclass itself."""
+
+    def test_validate_valid(self) -> None:
+        CronExpression("0", "3", "*", "*", "1").validate()
+
+    def test_validate_invalid_raises(self) -> None:
+        with pytest.raises(ValueError):
+            CronExpression("60", "3", "*", "*", "1").validate()
+
+
+class TestFieldValidatorErrorPaths:
+    """Cover every error-raising branch inside the five field validator functions."""
+
+    # ------------------------------------------------------------------
+    # _validate_minute_field
+    # ------------------------------------------------------------------
+
+    def test_minute_step_nonnumeric(self) -> None:
+        with pytest.raises(ValueError, match="Invalid minute"):
+            _validate_minute_field("*/abc")
+
+    def test_minute_step_zero(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            _validate_minute_field("*/0")
+
+    def test_minute_range_nonnumeric_endpoint(self) -> None:
+        with pytest.raises(ValueError, match="Invalid minute"):
+            _validate_minute_field("0-abc")
+
+    def test_minute_range_value_out_of_range(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            _validate_minute_field("0-60")
+
+    def test_minute_scalar_nonnumeric(self) -> None:
+        with pytest.raises(ValueError, match="Invalid minute"):
+            _validate_minute_field("abc")
+
+    # ------------------------------------------------------------------
+    # _validate_hour_field
+    # ------------------------------------------------------------------
+
+    def test_hour_step_nonnumeric(self) -> None:
+        with pytest.raises(ValueError, match="Invalid hour"):
+            _validate_hour_field("*/abc")
+
+    def test_hour_step_zero(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            _validate_hour_field("*/0")
+
+    def test_hour_range_nonnumeric_endpoint(self) -> None:
+        with pytest.raises(ValueError, match="Invalid hour"):
+            _validate_hour_field("0-abc")
+
+    def test_hour_range_value_out_of_range(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            _validate_hour_field("0-24")
+
+    def test_hour_scalar_nonnumeric(self) -> None:
+        with pytest.raises(ValueError, match="Invalid hour"):
+            _validate_hour_field("abc")
+
+    # ------------------------------------------------------------------
+    # _validate_dom_field
+    # ------------------------------------------------------------------
+
+    def test_dom_step_nonnumeric(self) -> None:
+        with pytest.raises(ValueError, match="Invalid day-of-month"):
+            _validate_dom_field("*/abc")
+
+    def test_dom_step_zero(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            _validate_dom_field("*/0")
+
+    def test_dom_range_nonnumeric_endpoint(self) -> None:
+        with pytest.raises(ValueError, match="Invalid day-of-month"):
+            _validate_dom_field("1-abc")
+
+    def test_dom_range_value_out_of_range(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            _validate_dom_field("1-32")
+
+    def test_dom_scalar_nonnumeric(self) -> None:
+        with pytest.raises(ValueError, match="Invalid day-of-month"):
+            _validate_dom_field("abc")
+
+    # ------------------------------------------------------------------
+    # _validate_month_field
+    # ------------------------------------------------------------------
+
+    def test_month_step_nonnumeric(self) -> None:
+        with pytest.raises(ValueError, match="Invalid month"):
+            _validate_month_field("*/abc")
+
+    def test_month_step_zero(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            _validate_month_field("*/0")
+
+    def test_month_range_nonnumeric_endpoint(self) -> None:
+        with pytest.raises(ValueError, match="Invalid month"):
+            _validate_month_field("1-abc")
+
+    def test_month_range_value_out_of_range(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            _validate_month_field("1-13")
+
+    def test_month_scalar_nonnumeric(self) -> None:
+        with pytest.raises(ValueError, match="Invalid month"):
+            _validate_month_field("abc")
+
+    # ------------------------------------------------------------------
+    # _validate_dow_field
+    # ------------------------------------------------------------------
+
+    def test_dow_range_nonnumeric_endpoint(self) -> None:
+        with pytest.raises(ValueError, match="Invalid day-of-week"):
+            _validate_dow_field("0-abc")
+
+    def test_dow_range_value_out_of_range(self) -> None:
+        with pytest.raises(ValueError, match="out of range"):
+            _validate_dow_field("0-7")
+
+    def test_dow_scalar_nonnumeric(self) -> None:
+        with pytest.raises(ValueError, match="Invalid day-of-week"):
+            _validate_dow_field("abc")

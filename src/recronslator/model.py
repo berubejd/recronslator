@@ -47,9 +47,17 @@ class ScheduleIntent:
 
     # Month
     months: list[int] | None = None
+    month_interval: int | None = None  # e.g. "every 3 months" → */3
 
     # Exception days to exclude from day_of_month
     excluded_days_of_month: list[int] | None = None
+
+    # Exception days to exclude from day_of_week (e.g. "every day except Monday")
+    excluded_days_of_week: list[int] | None = None
+
+    # Last occurrence of a weekday in a month (e.g. "last Friday" → 5L in DOW)
+    # Uses NL notation supported by Quartz/AWS/GCP schedulers.
+    last_weekday_of_month: int | None = None
 
 
 
@@ -218,6 +226,12 @@ def _validate_dow_field(value: str) -> None:
     if value == "*":
         return
     for part in value.split(","):
+        # NL notation: e.g. "5L" means "last Friday of the month"
+        if part.endswith("L") and part[:-1].isdigit():
+            n = int(part[:-1])
+            if not 0 <= n <= 6:
+                raise ValueError(f"Day-of-week value {n} is out of range (0-6)")
+            continue
         if "-" in part:
             lo, hi = part.split("-", 1)
             for x in (lo, hi):

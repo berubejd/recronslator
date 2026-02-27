@@ -90,6 +90,12 @@ def validate_intent(intent: ScheduleIntent) -> None:
             if not 1 <= m <= 12:
                 raise ValueError(f"Month value {m} is out of range (1-12)")
 
+    if intent.last_weekday_of_month is not None:
+        if not 0 <= intent.last_weekday_of_month <= 6:
+            raise ValueError(
+                f"last_weekday_of_month {intent.last_weekday_of_month} is out of range (0-6)"
+            )
+
     if intent.ordinal_weekday is not None:
         nth, weekday = intent.ordinal_weekday
         if not 1 <= nth <= 5:
@@ -121,11 +127,14 @@ def _check_is_not_empty(intent: ScheduleIntent) -> None:
         intent.day_interval is not None,
         intent.last_day_of_month,
         intent.ordinal_weekday is not None,
+        intent.last_weekday_of_month is not None,
         intent.days_of_week is not None,
         intent.weekday_only,
         intent.weekend_only,
         intent.months is not None,
+        intent.month_interval is not None,
         intent.excluded_days_of_month is not None,
+        intent.excluded_days_of_week is not None,
     ])
     if not has_time and not has_day:
         raise ValueError("Could not understand the schedule description")

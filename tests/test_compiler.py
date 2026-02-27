@@ -2,7 +2,7 @@
 
 import pytest
 
-from recronslator.compiler import compile_intent
+from recronslator.compiler import compile_intent, _days_to_ranges, _compile_minute
 from recronslator.model import CronExpression, ScheduleIntent
 
 
@@ -156,3 +156,13 @@ class TestFullExpressions:
     def test_last_day_at_midnight(self) -> None:
         intent = ScheduleIntent(last_day_of_month=True, minutes=[59], hours=[23])
         assert compile(intent) == "59 23 L * *"
+
+
+class TestInternalHelpers:
+    def test_days_to_ranges_empty_list(self) -> None:
+        """Empty day list returns wildcard — guards the compiler against edge cases."""
+        assert _days_to_ranges([]) == "*"
+
+    def test_compile_minute_fully_unspecified(self) -> None:
+        """All minute-determining fields absent → wildcard minute field."""
+        assert _compile_minute(ScheduleIntent()) == "*"

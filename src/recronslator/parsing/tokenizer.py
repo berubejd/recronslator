@@ -8,19 +8,32 @@ from __future__ import annotations
 
 import re
 
-from recronslator.parsing.constants import NUMBERS, ORDINALS
+# ---------------------------------------------------------------------------
+# Word-to-digit tables (private to this module — only the tokenizer needs them)
+# ---------------------------------------------------------------------------
 
+# Ones and teens: zero–nineteen
+_ONES: dict[str, int] = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+    "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+    "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+}
+# Tens: twenty–fifty (cron tops out at 59 for minutes)
+_TENS: dict[str, int] = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50}
+# Valid suffix after a tens word: one–nine only (e.g. "twenty-five", not "twenty-ten")
+_SMALL: dict[str, int] = {k: v for k, v in _ONES.items() if 1 <= v <= 9}
 
-# Ordinal suffixes that should NOT be replaced (they are part of ordinal words
-# handled separately, e.g. "1st", "2nd", "3rd").
-_ORDINAL_DIGIT_RE = re.compile(r"\b(\d+)(st|nd|rd|th)\b")
+_TENS_PAT = "|".join(_TENS)
+_ONES_PAT = "|".join(_ONES)
+_SMALL_PAT = "|".join(_SMALL)
 
-# Matches a word-number followed optionally by a hyphen+word (e.g. "forty-five")
+# Matches compound word-numbers ("twenty-five", "thirty one") and simple
+# ones/teens ("fifteen", "seven").  Compound form: tens word followed
+# optionally by a hyphen or space and a ones-digit word (1–9).
 _WORD_NUMBER_RE = re.compile(
-    r"\b(forty-five|twenty|thirty|forty|fifty|"
-    r"zero|one|two|three|four|five|six|seven|eight|nine|ten|"
-    r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|"
-    r"eighteen|nineteen)\b"
+    rf"\b({_TENS_PAT})(?:[- ]({_SMALL_PAT}))?\b"
+    rf"|\b({_ONES_PAT})\b"
 )
 
 # Patterns that signal an unparseable or invalid request before we even try
@@ -30,8 +43,10 @@ _INEXPRESSIBLE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "Biweekly schedules cannot be expressed in standard 5-field cron",
     ),
     (
-        re.compile(r"\bbimonthly\b|\bevery other month\b"),
-        "Bimonthly schedules cannot be expressed in standard 5-field cron",
+        # "bimonthly" is ambiguous (twice a month OR every two months) so we
+        # reject it; use "every other month" or "twice a month" explicitly.
+        re.compile(r"\bbimonthly\b"),
+        "Bimonthly is ambiguous; use 'every other month' or 'twice a month' instead",
     ),
 ]
 
@@ -73,10 +88,9 @@ def tokenize(text: str) -> str:
 
 
 def _replace_word_number(m: re.Match[str]) -> str:
-    word = m.group(1)
-    # Check NUMBERS first, then ORDINALS as fallback
-    if word in NUMBERS:
-        return str(NUMBERS[word])
-    if word in ORDINALS:
-        return str(ORDINALS[word])
-    return word
+    if m.group(1):  # tens word matched (e.g. "twenty", "thirty")
+        value = _TENS[m.group(1)]
+        if m.group(2):  # optional ones suffix (e.g. "five" in "twenty-five")
+            value += _SMALL[m.group(2)]
+        return str(value)
+    return str(_ONES[m.group(3)])  # ones/teen word matched (e.g. "fifteen")
