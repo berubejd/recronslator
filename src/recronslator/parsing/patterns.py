@@ -322,7 +322,9 @@ def _p_hourly_ranged(text: str) -> ScheduleIntent | None:
     if hr is None:
         return None
     weekday_only = bool(re.search(r"\bweekdays?\b", text))
-    return ScheduleIntent(minutes=[0], hour_range=hr, weekday_only=weekday_only)
+    mn_m = re.search(r"\bat\s+:(\d{2})\b", text)
+    mn = int(mn_m.group(1)) if mn_m else 0
+    return ScheduleIntent(minutes=[mn], hour_range=hr, weekday_only=weekday_only)
 
 
 @registry.register("colon_past_every_hour", priority=199)

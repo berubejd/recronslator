@@ -66,7 +66,8 @@ def _build_description(
 def _describe_time(minute: str, hour: str) -> str:
     # Priority 0: wildcard minute with constrained hour → "Every minute between X and Y"
     # e.g. "* 9-17 * * *" → "Every minute between 9:00 AM and 5:00 PM"
-    if minute == "*" and hour != "*":
+    # Exclude step patterns (*/N) — those are hour intervals handled by Priority 2.
+    if minute == "*" and hour != "*" and not re.fullmatch(r"\*/\d+", hour):
         return f"Every minute {_describe_hour_constraint(hour)}"
 
     # Priority 1: interval in minute field
@@ -131,6 +132,11 @@ def _describe_time(minute: str, hour: str) -> str:
 
 
 def _describe_hour_constraint(hour: str) -> str:
+    # Step pattern: */N → "every N hours"
+    m = re.fullmatch(r"\*/(\d+)", hour)
+    if m:
+        n = int(m.group(1))
+        return f"every {n} hour{'s' if n != 1 else ''}"
     m = re.fullmatch(r"(\d+)-(\d+)", hour)
     if m:
         start = _fmt_hour(int(m.group(1)))

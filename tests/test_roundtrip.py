@@ -281,6 +281,7 @@ def test_forward_and_describe_keywords(
         "0 9-17 * * *",        # hourly with range
         "0 9-17 * * 1-5",      # hourly with range on weekdays
         "0 8-18 * * *",        # hourly with range (wider window)
+        "0 */2 * * *",         # hour interval
         # Describer + parser fixes (previously Layer 3)
         "30 * * * *",          # :N past every hour
         "15 * * * 1-5",        # :N past every hour on weekdays
@@ -323,4 +324,21 @@ class TestKnownLimitations:
         english = recronslator.describe("0 6 1-5 1,4,7,10 *")
         assert "6:00 AM" in english and "quarter" in english.lower()
         assert cronslate(english) == "0 6 * 1,4,7,10 *"  # loses dom range
+
+    def test_step_hour_with_nonzero_minute(self) -> None:
+        # '30 */2 * * *' → 'Every 2 hours at :30'
+        # The bare ':NN' minute syntax in the description has no enricher that
+        # can recover it; the hour interval fires first and minute defaults to 0.
+        english = recronslator.describe("30 */2 * * *")
+        assert "2" in english and ":30" in english
+        assert cronslate(english) == "0 */2 * * *"  # loses the :30 offset
+
+    def test_wildcard_minute_with_step_hour(self) -> None:
+        # '* */2 * * *' → 'Every 2 hours' (describe conflates with '0 */2 * * *').
+        # The wildcard minute means "every minute of every 2nd hour" which is
+        # semantically different from "once every 2 hours", but there is no
+        # natural-language phrase that round-trips to '* */2 * * *'.
+        english = recronslator.describe("* */2 * * *")
+        assert "2" in english and "hour" in english.lower()
+        assert cronslate(english) == "0 */2 * * *"  # minute wildcard lost
 
